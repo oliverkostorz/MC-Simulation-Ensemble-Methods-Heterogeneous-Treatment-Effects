@@ -10,7 +10,6 @@ pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools)
 #Import custom functions
 source('functions.R')
 
-
 #######################################################
 ############## Set simulation parameters ##############
 #######################################################
@@ -29,14 +28,14 @@ bernoulli <- as.numeric(rbernoulli(N, p = 0.5))
 #Rademacher
 rademacher <- rsign(N)
 
+#Poisson binomial
+poissonbinomial <- rpoisbinom(N, 0.4)
+
 #Binomial
 binomial <- rbinom(N, 6, 0.5) - 2
 
 #Hypergeometric
 hypergeometric <- rhyper(N, N/3, 2*N/3, N/2)
-
-#Poisson binomial
-poissonbinomial <- rpoisbinom(N, 0.8)
 
 #Geometric distribution
 geometric <- rgeom(N, 0.3)
@@ -86,32 +85,36 @@ normal <- rnorm(N, mean = -5, sd = 5)
 #Student's t-distribution
 studentst <- rt(N, 9)
 
+#Bind randomly drawn covariates to dataframe
+rvar <- cbind(bernoulli, rademacher, poissonbinomial, binomial,
+              hypergeometric, geometric, logarithmic, poisson,
+              beta, wrappedcauchy, wrappednormal, chisquared,
+              exponential, gamma, lognormal, weibull, gumbel,
+              laplace, logistic, normal, studentst)
 
-X <-  cbind(bernoulli, rademacher, binomial, hypergeometric,
-            poissonbinomial, geometric, logarithmic, poisson,
-            beta, wrappedcauchy, wrappednormal, chisquared,
-            exponential, gamma, lognormal, weibull, gumbel,
-            laplace, logistic, normal, studentst)
-
-rvar <- list(bernoulli, rademacher, binomial, hypergeometric,
-             poissonbinomial, geometric, logarithmic, poisson,
-             beta, wrappedcauchy, wrappednormal, chisquared,
-             exponential, gamma, lognormal, weibull, gumbel,
-             laplace, logistic, normal, studentst)
-
-
-rvar_nonbinary <- list(binomial, hypergeometric, poissonbinomial,
-                       geometric, logarithmic, poisson, beta,
-                       wrappedcauchy, wrappednormal, chisquared,
-                       exponential, gamma, lognormal, weibull, gumbel,
-                       laplace, logistic, normal, studentst)
+rvar_nonbinary <- cbind(binomial, hypergeometric, geometric,
+                        logarithmic, poisson, beta, wrappedcauchy,
+                        wrappednormal, chisquared, exponential,
+                        gamma, lognormal, weibull, gumbel,
+                        laplace, logistic, normal, studentst)
 
 #Sinc transformation
-sincvar <- lapply(rvar_nonbinary, function(x) sinc(x))
+sincvar <- custom_sinc(rvar_nonbinary)
 
 #Exponential transformation
-expvar <- lapply(rvar_nonbinary, function(x) exp(x))
+expvar <- custom_exp(rvar_nonbinary)
 
+#Bind transformed covariates to dataframe
+transvar <- cbind(sincvar, expvar)
+
+#Bind randomly drawn and transformed covariates to dataframe
+vars <- cbind(rvar, sincvar, expvar)
+
+#Crossproducts
+crossvar <- custom_crossprod(vars)
+
+#Bind all covariates to dataframe
+X <- cbind(vars, crossvar)
 
 #######################################################
 
