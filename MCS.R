@@ -5,10 +5,115 @@ set.seed(0815)
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 #Import packages
-pacman::p_load()
+pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools)
 
 #Import custom functions
 source('functions.R')
+
+
+#######################################################
+############## Set simulation parameters ##############
+#######################################################
+#Simulation size
+N <- 1000
+
+
+#######################################################
+
+#######################################################
+##################### Covariates ######################
+#######################################################
+#Bernoulli
+bernoulli <- as.numeric(rbernoulli(N, p = 0.5))
+
+#Rademacher
+rademacher <- rsign(N)
+
+#Binomial
+binomial <- rbinom(N, 6, 0.5) - 2
+
+#Hypergeometric
+hypergeometric <- rhyper(N, N/3, 2*N/3, N/2)
+
+#Poisson binomial
+poissonbinomial <- rpoisbinom(N, 0.8)
+
+#Geometric distribution
+geometric <- rgeom(N, 0.3)
+
+#Logarithmic distribution
+logarithmic <- rlogarithmic(N, 0.9)
+
+#Poisson distribution
+poisson <- rpois(N, 3)
+
+#Beta distribution
+beta <- rbeta(N, 2, 4, ncp = 0.5)
+
+#Wrapped Cauchy distribution
+wrappedcauchy <- rwrappedcauchy(N, mu = circular(4), rho = exp(-100))
+
+#Wrapped Normal distribution
+wrappednormal <- rwrappednormal(N, mu = circular(-4), sd = 9)
+
+#Chi-squared distribution
+chisquared <- rchisq(N, 4)
+
+#Exponential distribution
+exponential <- rexp(N, rate = 10)
+
+#Gamma distribution
+gamma <- rgamma(N, 0.8, scale = 1/1.5)
+
+#Log-normal distribution 
+lognormal <- rlnorm(N, meanlog = -2, sdlog = 4)
+
+#Weibull distribution
+weibull <- rweibull(N, 0.9, scale = 1)
+
+#Gumbel distribution
+gumbel <- rgumbel(N, loc = -5, scale = 10)
+
+#Laplace distribution
+laplace <- rlaplace(N, mu = 100, sigma = 5)
+
+#Logistic distribution
+logistic <- rlogis(N, location = 0, scale = 9)
+
+#Normal distribution
+normal <- rnorm(N, mean = -5, sd = 5)
+
+#Student's t-distribution
+studentst <- rt(N, 9)
+
+
+X <-  cbind(bernoulli, rademacher, binomial, hypergeometric,
+            poissonbinomial, geometric, logarithmic, poisson,
+            beta, wrappedcauchy, wrappednormal, chisquared,
+            exponential, gamma, lognormal, weibull, gumbel,
+            laplace, logistic, normal, studentst)
+
+rvar <- list(bernoulli, rademacher, binomial, hypergeometric,
+             poissonbinomial, geometric, logarithmic, poisson,
+             beta, wrappedcauchy, wrappednormal, chisquared,
+             exponential, gamma, lognormal, weibull, gumbel,
+             laplace, logistic, normal, studentst)
+
+
+rvar_nonbinary <- list(binomial, hypergeometric, poissonbinomial,
+                       geometric, logarithmic, poisson, beta,
+                       wrappedcauchy, wrappednormal, chisquared,
+                       exponential, gamma, lognormal, weibull, gumbel,
+                       laplace, logistic, normal, studentst)
+
+#Sinc transformation
+sincvar <- lapply(rvar_nonbinary, function(x) sinc(x))
+
+#Exponential transformation
+expvar <- lapply(rvar_nonbinary, function(x) exp(x))
+
+
+#######################################################
 
 #Generate matrix of covariates X as outlined in Appendix B.
 
