@@ -14,7 +14,7 @@ source('functions.R')
 ############## Set simulation parameters ##############
 #######################################################
 #Simulation size
-N <- 1000
+N <- 10000
 
 
 #######################################################
@@ -118,10 +118,22 @@ X <- cbind(vars, crossvar)
 
 #######################################################
 
-#Generate matrix of covariates X as outlined in Appendix B.
+
+#Calculate treatment probability per unit based on joint distribution of confounding variables.
 
 
-#Calculate treatment probability per unit based on joint distribution of con- founding variables.
+#####Fix NaN problem
+cov_sum <- rowSums(X)
+print(paste('Unable to calculate product in ', round(sum(is.na(cov_sum))/N*100, 1), '% of the cases.', sep = ''))
+cov_sum[is.na(cov_sum)] <- 0
+
+cov_sum <- (cov_sum - mean(cov_sum))/sd(cov_sum)
+
+prop_score <- 1/(1+exp(-cov_sum))
+
+
+
+
 
 
 #Draw treatment status Di per unit.
