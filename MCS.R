@@ -190,23 +190,48 @@ prop_score_8 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_8 != 0)])))
 treated_8 <- as.numeric(rbernoulli(N, p = prop_score_8))
 
 
-
-#Draw treatment status Di per unit.
-
-
-#Assign heterogeneous treatment effects per unit and DGP as outlined in Appendix C.
-
-
-#Calculate outcomes Y per DGP.
-
-
-#Randomly draw N pairs of outcomes and covariates plus treatment status.
+#Calculate outcomes Y per DGP
+Y_1 <- 0.5 + as.matrix(X)%*%beta_p_1 + treated_1 * beta_d_1 + rnorm(N, mean = 0, sd = (max(beta_d_1)-min(beta_d_1))/10)
+Y_2 <- 0.5 + as.matrix(X)%*%beta_p_2 + treated_2 * beta_d_2 + rnorm(N, mean = 0, sd = (max(beta_d_2)-min(beta_d_2))/10)
+Y_3 <- 0.5 + as.matrix(X)%*%beta_p_3 + treated_3 * beta_d_3 + rnorm(N, mean = 0, sd = (max(beta_d_3)-min(beta_d_3))/10)
+Y_4 <- 0.5 + as.matrix(X)%*%beta_p_4 + treated_4 * beta_d_4 + rnorm(N, mean = 0, sd = (max(beta_d_4)-min(beta_d_4))/10)
+Y_5 <- 0.5 + as.matrix(X)%*%beta_p_5 + treated_5 * beta_d_5 + rnorm(N, mean = 0, sd = (max(beta_d_5)-min(beta_d_5))/10)
+Y_6 <- 0.5 + as.matrix(X)%*%beta_p_6 + treated_6 * beta_d_6 + rnorm(N, mean = 0, sd = (max(beta_d_6)-min(beta_d_6))/10)
+Y_7 <- 0.5 + as.matrix(X)%*%beta_p_7 + treated_7 * beta_d_7 + rnorm(N, mean = 0, sd = (max(beta_d_7)-min(beta_d_7))/10)
+Y_8 <- 0.5 + as.matrix(X)%*%beta_p_8 + treated_8 * beta_d_8 + rnorm(N, mean = 0, sd = (max(beta_d_8)-min(beta_d_8))/10)
 
 
-#Randomly split sample of size N into folds of size ND , whereby I use D = 1 in-line with Grimmer et al. (2017).
+#######################################################
+###################### Iterations #####################
+#######################################################
+
+#Randomly draw N pairs of outcomes and covariates plus treatment status
+sample_size <- 100 #Only choose sample sizes which are multiples of 10 or amend code for sampling folds
+sample <- sample(x = 1:N, size = sample_size)
+
+#Randomly split sample into 10 folds
+fold10 <- sample
+fold1 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold1)]
+fold2 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold2)]
+fold3 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold3)]
+fold4 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold4)]
+fold5 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold5)]
+fold6 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold6)]
+fold7 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold7)]
+fold8 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold8)]
+fold9 <- sample(x = fold10, size = floor(sample_size/10))
+fold10 <- fold10[-which(fold10 %in% fold9)]
 
 
-#Generate out of sample predictions for all M component methods using all remaining D − 1-folds for training. 􏰎􏰎
+#Generate out of sample predictions for all M component methods using all remaining D − 1-folds for training.
 
 
 #Obtain N × M matrix for Y per DGP, whereby Yi,m stands for unit i’s out of sample prediction from method m.
