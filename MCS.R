@@ -5,7 +5,7 @@ set.seed(0815)
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 #Import packages
-pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools)
+pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,sets)
 
 #Import custom functions
 source('functions.R')
@@ -14,7 +14,7 @@ source('functions.R')
 ############## Set simulation parameters ##############
 #######################################################
 #Simulation size
-N <- 10000
+N <- 1000
 
 
 #######################################################
@@ -118,21 +118,76 @@ X <- cbind(vars, crossvar)
 
 #######################################################
 
+#Replace Inf from sinc function with 0
+X <- data.frame(apply(X, MARGIN = 2, function(c) unlist(lapply(c, function(z) ifelse(is.finite(z), z, 0)))))
 
-#Calculate treatment probability per unit based on joint distribution of confounding variables.
+#Parameters for later stages in code
+p <- ncol(X)
+bXt <- which(colnames(X) == 'binomialXstudentst')
+
+#Center and Standardize covariates for propensity score calculation
+X_std <- data.frame(apply(X, MARGIN = 2, FUN = function(x) (x-mean(x))/sd(x)))
+
+#######################################################
+####################### Effects #######################
+#######################################################
+
+#DGPs 1 to 4 heterogeneous treatment effects
+beta_d_1 <- c(rep(1, times = N))
+beta_d_1[which(X[,1] == 0)] <- 0.5
+beta_d_2 <- beta_d_3 <- beta_d_4 <- beta_d_1
+
+#Propensity scores for linear DGPs (DGPs 1, 3, 5 and 7)
+prop_score_linear <- 1/(1+exp(-rowSums(X_std[,1:21])))
+
+#DGPs 5 to 8 heterogeneous treatment effects
+beta_d_5 <- floor(X[,bXt]/sd(X[,bXt]))
+beta_d_6 <- beta_d_7 <- beta_d_8 <- beta_d_5
 
 
-#####Fix NaN problem
-cov_sum <- rowSums(X)
-print(paste('Unable to calculate product in ', round(sum(is.na(cov_sum))/N*100, 1), '% of the cases.', sep = ''))
-cov_sum[is.na(cov_sum)] <- 0
+#DGP 1 coefficients
+beta_p_1 <- c(rep(0, times = p))
+beta_p_1[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_1)-min(beta_d_1))/2)
+treated_1 <- as.numeric(rbernoulli(N, p = prop_score_linear))
 
-cov_sum <- (cov_sum - mean(cov_sum))/sd(cov_sum)
+#DGP 2 coefficients
+beta_p_2 <- c(rep(0, times = p))
+beta_p_2 <- as.numeric(rbernoulli(p, p = 0.7))*rnorm(p, mean = 0, sd = (max(beta_d_2)-min(beta_d_2))/2)
+prop_score_2 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_2 != 0)])))
+treated_2 <- as.numeric(rbernoulli(N, p = prop_score_2))
 
-prop_score <- 1/(1+exp(-cov_sum))
+#DGP 3 coefficients
+beta_p_3 <- c(rep(0, times = p))
+beta_p_3[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_3)-min(beta_d_3))*2)
+treated_3 <- as.numeric(rbernoulli(N, p = prop_score_linear))
 
+#DGP 4 coefficients
+beta_p_4 <- c(rep(0, times = p))
+beta_p_4 <- as.numeric(rbernoulli(p, p = 0.7))*rnorm(p, mean = 0, sd = (max(beta_d_4)-min(beta_d_4))*2)
+prop_score_4 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_4 != 0)])))
+treated_4 <- as.numeric(rbernoulli(N, p = prop_score_4))
 
+#DGP 5 coefficients
+beta_p_5 <- c(rep(0, times = p))
+beta_p_5[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_5)-min(beta_d_5))/2)
+treated_5 <- as.numeric(rbernoulli(N, p = prop_score_linear))
 
+#DGP 6 coefficients
+beta_p_6 <- c(rep(0, times = p))
+beta_p_6 <- as.numeric(rbernoulli(p, p = 0.7))*rnorm(p, mean = 0, sd = (max(beta_d_6)-min(beta_d_6))/2)
+prop_score_6 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_6 != 0)])))
+treated_6 <- as.numeric(rbernoulli(N, p = prop_score_6))
+
+#DGP 7 coefficients
+beta_p_7 <- c(rep(0, times = p))
+beta_p_7[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_7)-min(beta_d_7))*2)
+treated_7 <- as.numeric(rbernoulli(N, p = prop_score_linear))
+
+#DGP 8 coefficients
+beta_p_8 <- c(rep(0, times = p))
+beta_p_8 <- as.numeric(rbernoulli(p, p = 0.7))*rnorm(p, mean = 0, sd = (max(beta_d_8)-min(beta_d_8))*2)
+prop_score_8 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_8 != 0)])))
+treated_8 <- as.numeric(rbernoulli(N, p = prop_score_8))
 
 
 
