@@ -5,7 +5,7 @@ set.seed(0815)
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 #Import packages
-pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,sets)
+pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,sets,glmnet,SVMMatch)
 
 #Import custom functions
 source('functions.R')
@@ -230,8 +230,77 @@ fold10 <- fold10[-which(fold10 %in% fold8)]
 fold9 <- sample(x = fold10, size = floor(sample_size/10))
 fold10 <- fold10[-which(fold10 %in% fold9)]
 
+folds <- list(fold1, fold2, fold3, fold4, fold5,
+              fold6, fold7, fold8, fold9, fold10)
 
-#Generate out of sample predictions for all M component methods using all remaining D − 1-folds for training.
+
+#Out of sample predictions for Ys
+#Columns are component methods M and Rows units i
+Y_1_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_1_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_1_hat) <- sort(sample)
+Y_2_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_2_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_2_hat) <- sort(sample)
+Y_3_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_3_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_3_hat) <- sort(sample)
+Y_4_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_4_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_4_hat) <- sort(sample)
+Y_5_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_5_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_5_hat) <- sort(sample)
+Y_6_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_6_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_6_hat) <- sort(sample)
+Y_7_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_7_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_7_hat) <- sort(sample)
+Y_8_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
+colnames(Y_8_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
+                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
+rownames(Y_8_hat) <- sort(sample)
+
+#Y_1
+for(i in 1:10){
+  
+  training_units <- sort(unlist(folds[c(1:10)[-i]]))
+  X_training_sample <- X[training_units,]
+  D_training_sample <- treated_1[training_units]
+  Y_training_sample <- Y_1[training_units]
+  
+  test_units <- sort(folds[[i]])
+  X_test_sample <- X[test_units,]
+  D_test_sample <- treated_1[test_units]
+  
+  #### Elastic-Net ####
+  #Split by treatment status and heterogeneous group
+  #Non-treated
+  EN_fit <- cv.glmnet(as.matrix(X_training_sample[which(D_training_sample==0),]), Y_training_sample[which(D_training_sample==0)], type.measure = 'mse', alpha = .5)
+  Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which(D_test_sample==0)]),'Elastic Net'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(X_test_sample[which(D_test_sample==0),]))
+  #Treated, X_1 = 1
+  EN_fit <- cv.glmnet(as.matrix(X_training_sample[which((D_training_sample==1)&(X_training_sample[,1]==1)),]), Y_training_sample[which((D_training_sample==1)&(X_training_sample[,1]==1))], type.measure = 'mse', alpha = .5)
+  Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which((D_test_sample==1)&(X_test_sample[,1]==1))]),'Elastic Net'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(X_test_sample[which((D_test_sample==1)&(X_test_sample[,1]==1)),]))
+  #Treated, X_1 = 0
+  EN_fit <- cv.glmnet(as.matrix(X_training_sample[which((D_training_sample==1)&(X_training_sample[,1]==0)),]), Y_training_sample[which((D_training_sample==1)&(X_training_sample[,1]==0))], type.measure = 'mse', alpha = .5)
+  Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which((D_test_sample==1)&(X_test_sample[,1]==0))]),'Elastic Net'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(X_test_sample[which((D_test_sample==1)&(X_test_sample[,1]==0)),]))
+
+  #### KRLS ####
+  
+}
+
+
+
+
+#all M component methods using all remaining D − 1-folds for training.
 
 
 #Obtain N × M matrix for Y per DGP, whereby Yi,m stands for unit i’s out of sample prediction from method m.
