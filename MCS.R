@@ -6,14 +6,12 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 #Set path to Java
 #Sys.setenv('JAVA_HOME' = '/Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/') 
-dyn.load('/Library/Java/JavaVirtualMachines/1.8.0_291.jdk/Contents/Home/jre/lib/server/libjvm.dylib')
+#dyn.load('/Library/Java/JavaVirtualMachines/1.8.0_291.jdk/Contents/Home/jre/lib/server/libjvm.dylib')
 
 #Import packages
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
-               sets,glmnet,KRLS,devtools,SVMMatch,rJava,RWeka)
+               sets,glmnet,KRLS,devtools,stringr,randomForest)#,rJava,RWeka,SVMMatch,FindIt,mboost,GAMBoost)
 install_github('xnie/rlearner')
-
-install.packages('rJava', type='source')
 
 #Import custom functions
 source('functions.R')
@@ -133,7 +131,14 @@ X <- data.frame(apply(X, MARGIN = 2, function(c) unlist(lapply(c, function(z) if
 #Parameters for later stages in code
 p <- ncol(X)
 bXt <- which(colnames(X) == 'binomialXstudentst')
-base_variables <- c(1:21) #Don't forget to add the non-effect variables
+#Don't forget to add pseudo covariates later on
+base_variables_name <- c('bernoulli', 'rademacher', 'poissonbinomial', 'binomial',
+                         'hypergeometric', 'geometric', 'logarithmic', 'poisson',
+                         'beta', 'wrappedcauchy', 'wrappednormal', 'chisquared',
+                         'exponential', 'gamma', 'lognormal', 'weibull', 'gumbel',
+                         'laplace', 'logistic', 'normal', 'studentst')
+base_variables_name <- unlist(lapply(base_variables_name, function(x) c(x, paste(x, ':treated', sep = ''))))
+base_variables_name <- c(base_variables_name, 'treated')
 
 #Center and Standardize covariates for propensity score calculation
 X_std <- data.frame(apply(X, MARGIN = 2, FUN = function(x) (x-mean(x))/sd(x)))
@@ -280,18 +285,23 @@ colnames(Y_8_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
                        'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
 rownames(Y_8_hat) <- sort(sample)
 
+a <- model.matrix(~matrix(data = 1, ncol = 3, nrow = 5)*c(1, 1, 0, 0, 1))
+
 ### Y_1 ###
 for(i in 1:10){
   
   training_units <- sort(unlist(folds[c(1:10)[-i]]))
   training_sample <- model.matrix(~as.matrix(X[training_units,])*treated_1[training_units])
   
-  X_training_sample <- X[training_units,]
+  colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[training_units, \\]\\)'), '_1\\[training_units\\]')
+  base_variables <- which(colnames(training_sample) %in% base_variables_name)
+  
   D_training_sample <- treated_1[training_units]
   Y_training_sample <- Y_1[training_units]
   
   test_units <- sort(folds[[i]])
   test_sample <- model.matrix(~as.matrix(X[test_units,])*treated_1[test_units])
+  colnames(test_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[test_units, \\]\\)'), '_1\\[test_units\\]')
   
   X_test_sample <- X[test_units,]
   D_test_sample <- treated_1[test_units]
@@ -309,7 +319,7 @@ for(i in 1:10){
   
   
   #### R-Learner ####
-  r_fit <- rboost(as.matrix(X_training_sample[,base_variables]), D_training_sample, Y_training_sample)
+  r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
   r_pred <- predict(r_fit, as.matrix(X_test_sample[,base_variables]), tau_only = FALSE)
   Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which(D_test_sample==1)]),'R-learner'] <- r_pred$mu1[which(D_test_sample==1)]
   Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which(D_test_sample==0)]),'R-learner'] <- r_pred$mu0[which(D_test_sample==0)]
@@ -317,19 +327,26 @@ for(i in 1:10){
   
   #### SVMs #### 
   
+  #Not done
+  "
   SVM_fit <- SMO(Y ~ ., data = data.frame(Y = Y_training_sample, training_sample[,base_variables]), control = Weka_control(M = TRUE))
   predict(SVM_fit, newdata = data.frame(test_sample[,base_variables]), type = 'probability')[,2] 
+  "
   
   #### FindIt ####
   
+  #Skipped cause Y has to be binary?
   
   
   #### Causal Boosting ####
   
+  #Not yet ready for publication / GAMBoost not for this R version
   
   
-  #### Causal Forest ####
+  #### Random Forest ####
   
+  CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
+  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'Causal Forest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
   
   
   #### BGLM ####
