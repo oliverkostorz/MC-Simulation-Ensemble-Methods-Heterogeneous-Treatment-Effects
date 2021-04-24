@@ -10,8 +10,10 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 #Import packages
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
-               sets,glmnet,KRLS,devtools,stringr,randomForest)#,rJava,RWeka,SVMMatch,FindIt,mboost,GAMBoost)
-install_github('xnie/rlearner')
+               sets,glmnet,KRLS,mboost,devtools,stringr,randomForest,arm,
+               BayesTree,bcf)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
+#install_github('xnie/rlearner')
+library(rlearner)
 
 #Import custom functions
 source('functions.R')
@@ -285,7 +287,6 @@ colnames(Y_8_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
                        'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
 rownames(Y_8_hat) <- sort(sample)
 
-a <- model.matrix(~matrix(data = 1, ncol = 3, nrow = 5)*c(1, 1, 0, 0, 1))
 
 ### Y_1 ###
 for(i in 1:10){
@@ -306,7 +307,7 @@ for(i in 1:10){
   X_test_sample <- X[test_units,]
   D_test_sample <- treated_1[test_units]
 
-  "
+  
   #### Elastic-Net ####
   EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
   Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'Elastic Net'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(test_sample))
@@ -320,13 +321,12 @@ for(i in 1:10){
   
   #### R-Learner ####
   r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
-  r_pred <- predict(r_fit, as.matrix(X_test_sample[,base_variables]), tau_only = FALSE)
+  r_pred <- predict(r_fit, as.matrix(test_sample[,base_variables]), tau_only = FALSE)
   Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which(D_test_sample==1)]),'R-learner'] <- r_pred$mu1[which(D_test_sample==1)]
   Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which(D_test_sample==0)]),'R-learner'] <- r_pred$mu0[which(D_test_sample==0)]
-  "
+  
   
   #### SVMs #### 
-  
   #Not done
   "
   SVM_fit <- SMO(Y ~ ., data = data.frame(Y = Y_training_sample, training_sample[,base_variables]), control = Weka_control(M = TRUE))
@@ -334,30 +334,34 @@ for(i in 1:10){
   "
   
   #### FindIt ####
-  
   #Skipped cause Y has to be binary?
   
   
   #### Causal Boosting ####
-  
   #Not yet ready for publication / GAMBoost not for this R version
   
   
   #### Random Forest ####
-  
   CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
   Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'Causal Forest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
   
   
   #### BGLM ####
-  
+  #Check if base variables are indeed the correct choice
+  BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
+  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
   
   
   #### BCF ####
-  
-  
+  "pihat <- glm(D_training_sample ~ training_sample[,base_variables], family = 'binomial')
+  BCF_fit <- bcf(Y_training_sample, D_training_sample, training_sample[,base_variables],
+                 pihat, nburn = 2000, nsim = 2000)"
+  BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
+                   x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
+  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
   
 }
+
 
 
 
