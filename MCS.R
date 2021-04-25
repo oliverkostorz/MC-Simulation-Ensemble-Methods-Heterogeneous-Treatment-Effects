@@ -4,10 +4,6 @@ set.seed(0815)
 #Set working device
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-#Set path to Java
-#Sys.setenv('JAVA_HOME' = '/Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/') 
-#dyn.load('/Library/Java/JavaVirtualMachines/1.8.0_291.jdk/Contents/Home/jre/lib/server/libjvm.dylib')
-
 #Import packages
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
                sets,glmnet,KRLS,mboost,devtools,stringr,randomForest,arm,
@@ -18,13 +14,15 @@ library(rlearner)
 #Import custom functions
 source('functions.R')
 
+
 #######################################################
 ############## Set simulation parameters ##############
 #######################################################
 #Simulation size
 N <- 1000
 sample_size <- 100 #Only choose sample sizes which are multiples of 10 or amend code for sampling folds
-
+iterations <- 1
+folds <- 10 #for Super Learning
 
 #######################################################
 
@@ -206,6 +204,8 @@ beta_p_8 <- as.numeric(rbernoulli(p, p = 0.7))*rnorm(p, mean = 0, sd = (max(beta
 prop_score_8 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_8 != 0)])))
 treated_8 <- as.numeric(rbernoulli(N, p = prop_score_8))
 
+treateds <- list(treated_1, treated_2, treated_3, treated_4,
+                 treated_5, treated_6, treated_7, treated_8)
 
 #Calculate outcomes Y per DGP
 Y_1 <- 0.5 + as.matrix(X)%*%beta_p_1 + treated_1 * beta_d_1 + rnorm(N, mean = 0, sd = (max(beta_d_1)-min(beta_d_1))/10)
@@ -219,146 +219,92 @@ Y_8 <- 0.5 + as.matrix(X)%*%beta_p_8 + treated_8 * beta_d_8 + rnorm(N, mean = 0,
 
 
 #######################################################
-###################### Iterations #####################
+###################### Simulation #####################
 #######################################################
 
 #Randomly draw N pairs of outcomes and covariates plus treatment status
 sample <- sample(x = 1:N, size = sample_size)
 
 
-#### Super Learner ####
-#Randomly split sample into 10 folds
-fold10 <- sample
-fold1 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold1)]
-fold2 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold2)]
-fold3 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold3)]
-fold4 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold4)]
-fold5 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold5)]
-fold6 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold6)]
-fold7 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold7)]
-fold8 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold8)]
-fold9 <- sample(x = fold10, size = floor(sample_size/10))
-fold10 <- fold10[-which(fold10 %in% fold9)]
+#######################################################
+#################### Super Learner ####################
+#######################################################
 
-folds <- list(fold1, fold2, fold3, fold4, fold5,
-              fold6, fold7, fold8, fold9, fold10)
+#Randomly split sample into f folds
+folds <- split(sample, rep(1:ceiling(length(sample)/f), each = length(sample)/f)[1:length(sample)])
 
-
-#Out of sample predictions for Ys
+#DFs for out of sample predictions for Ys
 #Columns are component methods M and Rows units i
-Y_1_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_1_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_1_hat) <- sort(sample)
-Y_2_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_2_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_2_hat) <- sort(sample)
-Y_3_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_3_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_3_hat) <- sort(sample)
-Y_4_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_4_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_4_hat) <- sort(sample)
-Y_5_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_5_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_5_hat) <- sort(sample)
-Y_6_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_6_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_6_hat) <- sort(sample)
-Y_7_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_7_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_7_hat) <- sort(sample)
-Y_8_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 9))
-colnames(Y_8_hat) <- c('Elastic Net', 'KRLS', 'R-learner', 'SVM', 'FindIt',
-                       'Causal Boosting', 'Causal Forest', 'BGLM', 'BCF')
-rownames(Y_8_hat) <- sort(sample)
-
-
-### Y_1 ###
-for(i in 1:10){
+Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
+                                     dimnames = list(sort(sample),
+                                                     c('Elastic Net', 'KRLS', 'R-learner',
+                                                       'Causal Forest', 'BGLM', 'BCF'))))),
+              times = 8)
+                                                                      
+### Y_1 t_hat to Y_4_hat ###
+for(i in 1:4){
   
-  training_units <- sort(unlist(folds[c(1:10)[-i]]))
-  training_sample <- model.matrix(~as.matrix(X[training_units,])*treated_1[training_units])
+  Y_hat <- Y_hats[[i]]
+  treated <- treateds[[i]]
   
-  colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[training_units, \\]\\)'), '_1\\[training_units\\]')
-  base_variables <- which(colnames(training_sample) %in% base_variables_name)
+  for(i in 1:10){
+    
+    training_units <- sort(unlist(folds[c(1:10)[-i]]))
+    training_sample <- model.matrix(~as.matrix(X[training_units,])*treated[training_units])
+    
+    colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[training_units, \\]\\)'), '_1\\[training_units\\]')
+    base_variables <- which(colnames(training_sample) %in% base_variables_name)
+    
+    D_training_sample <- treated[training_units]
+    Y_training_sample <- Y_1[training_units]
+    
+    test_units <- sort(folds[[i]])
+    test_sample <- model.matrix(~as.matrix(X[test_units,])*treated[test_units])
+    colnames(test_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[test_units, \\]\\)'), '_1\\[test_units\\]')
+    
+    X_test_sample <- X[test_units,]
+    D_test_sample <- treated[test_units]
+    
+    
+    #### Elastic-Net ####
+    EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'Elastic Net'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(test_sample))
+    
+    
+    #### KRLS ####
+    non_constant <- which(!apply(training_sample[,base_variables], MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
+    KRLS_fit <- krls(X = training_sample[,base_variables][,non_constant], y = Y_training_sample, derivative = FALSE)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'KRLS'] <- predict(KRLS_fit, newdata = test_sample[,base_variables][,non_constant])$fit
+    
+    
+    #### R-Learner ####
+    r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
+    r_pred <- predict(r_fit, as.matrix(test_sample[,base_variables]), tau_only = FALSE)
+    Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==1)]),'R-learner'] <- r_pred$mu1[which(D_test_sample==1)]
+    Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==0)]),'R-learner'] <- r_pred$mu0[which(D_test_sample==0)]
+    
+    
+    #### Random Forest ####
+    CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
+    Y_hat[which(rownames(Y_hat) %in% test_units),'Causal Forest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
+    
+    
+    #### BGLM ####
+    #Check if base variables are indeed the correct choice
+    BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
+    Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
+    
+    
+    #### BCF ####
+    BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
+                     x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+    
+    gc()
   
-  D_training_sample <- treated_1[training_units]
-  Y_training_sample <- Y_1[training_units]
+  }
   
-  test_units <- sort(folds[[i]])
-  test_sample <- model.matrix(~as.matrix(X[test_units,])*treated_1[test_units])
-  colnames(test_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[test_units, \\]\\)'), '_1\\[test_units\\]')
-  
-  X_test_sample <- X[test_units,]
-  D_test_sample <- treated_1[test_units]
-
-  
-  #### Elastic-Net ####
-  EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
-  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'Elastic Net'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(test_sample))
-
-  
-  #### KRLS ####
-  non_constant <- which(!apply(training_sample[,base_variables], MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
-  KRLS_fit <- krls(X = training_sample[,base_variables][,non_constant], y = Y_training_sample, derivative = FALSE)
-  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'KRLS'] <- predict(KRLS_fit, newdata = test_sample[,base_variables][,non_constant])$fit
-  
-  
-  #### R-Learner ####
-  r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
-  r_pred <- predict(r_fit, as.matrix(test_sample[,base_variables]), tau_only = FALSE)
-  Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which(D_test_sample==1)]),'R-learner'] <- r_pred$mu1[which(D_test_sample==1)]
-  Y_1_hat[which(rownames(Y_1_hat) %in% test_units[which(D_test_sample==0)]),'R-learner'] <- r_pred$mu0[which(D_test_sample==0)]
-  
-  
-  #### SVMs #### 
-  #Not done
-  "
-  SVM_fit <- SMO(Y ~ ., data = data.frame(Y = Y_training_sample, training_sample[,base_variables]), control = Weka_control(M = TRUE))
-  predict(SVM_fit, newdata = data.frame(test_sample[,base_variables]), type = 'probability')[,2] 
-  "
-  
-  #### FindIt ####
-  #Skipped cause Y has to be binary?
-  
-  
-  #### Causal Boosting ####
-  #Not yet ready for publication / GAMBoost not for this R version
-  
-  
-  #### Random Forest ####
-  CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
-  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'Causal Forest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
-  
-  
-  #### BGLM ####
-  #Check if base variables are indeed the correct choice
-  BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
-  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
-  
-  
-  #### BCF ####
-  "pihat <- glm(D_training_sample ~ training_sample[,base_variables], family = 'binomial')
-  BCF_fit <- bcf(Y_training_sample, D_training_sample, training_sample[,base_variables],
-                 pihat, nburn = 2000, nsim = 2000)"
-  BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
-                   x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-  Y_1_hat[which(rownames(Y_1_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+  Y_hats[[i]] <- Y_hat
   
 }
 
