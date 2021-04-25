@@ -19,10 +19,10 @@ source('functions.R')
 ############## Set simulation parameters ##############
 #######################################################
 #Simulation size
-N <- 1000
-sample_size <- 100 #Only choose sample sizes which are multiples of 10 or amend code for sampling folds
-iterations <- 1
-folds <- 10 #for Super Learning
+N <- 1000L
+sample_size <- 100L #Only choose sample sizes which are multiples of 10 or amend code for sampling folds
+iterations <- 1L
+f <- 10L #Folds for Super Learning
 
 #######################################################
 
@@ -221,6 +221,37 @@ Y_8 <- 0.5 + as.matrix(X)%*%beta_p_8 + treated_8 * beta_d_8 + rnorm(N, mean = 0,
 #######################################################
 ###################### Simulation #####################
 #######################################################
+start_time <- Sys.time()
+
+for(it in 1:iterations){
+  
+  #Print operational information
+  now <- Sys.time()
+  diff <- as.numeric(now) - as.numeric(start_time)
+  
+  days <- floor(diff/(60*60*24))
+  hours <- floor(diff/(60*60)-days*24)
+  minutes <- floor(diff/60-hours*60-days*24*60)
+  seconds <- round(diff-minutes*60-hours*60*60-days*24*60*60)
+  
+  total_time_est <- diff/it*iterations
+  end_time_est <- as.numeric(start_time) + total_time_est
+  
+  print(paste('Beginn iteration ', it, ' of ', iterations, '.', sep = ''))
+  print(paste('Time elapsed: ',
+              ifelse(days>1, paste(days, ' days, ', sep = ''), ''),
+              ifelse(days==1, paste(days, ' day, ', sep = ''), ''),
+              ifelse(hours>1, paste(hours, ' hours, ', sep = ''), ''),
+              ifelse(hours==1, paste(hours, ' hour, ', sep = ''), ''),
+              ifelse(minutes>1, paste(minutes, ' minutes, ', sep = ''), ''),
+              ifelse(minutes==1, paste(minutes, ' minute, ', sep = ''), ''),
+              seconds, ' seconds.',
+              sep = ''))
+  print(paste('Estimated time of completion: ',
+              as.POSIXct(end_time_est, origin = "1970-01-01"),
+              sep = ''))
+  
+}
 
 #Randomly draw N pairs of outcomes and covariates plus treatment status
 sample <- sample(x = 1:N, size = sample_size)
@@ -242,14 +273,14 @@ Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
               times = 8)
                                                                       
 ### Y_1 t_hat to Y_4_hat ###
-for(i in 1:4){
+for(dgps in 1:4){
   
-  Y_hat <- Y_hats[[i]]
-  treated <- treateds[[i]]
+  Y_hat <- Y_hats[[dgps]]
+  treated <- treateds[[dgps]]
   
-  for(i in 1:10){
+  for(fl in 1:10){
     
-    training_units <- sort(unlist(folds[c(1:10)[-i]]))
+    training_units <- sort(unlist(folds[c(1:10)[-fl]]))
     training_sample <- model.matrix(~as.matrix(X[training_units,])*treated[training_units])
     
     colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[training_units, \\]\\)'), '_1\\[training_units\\]')
@@ -258,7 +289,7 @@ for(i in 1:4){
     D_training_sample <- treated[training_units]
     Y_training_sample <- Y_1[training_units]
     
-    test_units <- sort(folds[[i]])
+    test_units <- sort(folds[[fl]])
     test_sample <- model.matrix(~as.matrix(X[test_units,])*treated[test_units])
     colnames(test_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X\\[test_units, \\]\\)'), '_1\\[test_units\\]')
     
@@ -304,7 +335,7 @@ for(i in 1:4){
   
   }
   
-  Y_hats[[i]] <- Y_hat
+  Y_hats[[dgps]] <- Y_hat
   
 }
 
