@@ -7,7 +7,7 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 #Import packages
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
                sets,glmnet,KRLS,mboost,devtools,stringr,randomForest,arm,
-               BayesTree,bcf,fastDummies)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
+               BayesTree,bcf,fastDummies,pracma,quadprog)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
 #install_github('xnie/rlearner')
 library(rlearner)
 
@@ -217,6 +217,8 @@ Y_6 <- 0.5 + as.matrix(X)%*%beta_p_6 + treated_6 * beta_d_6 + rnorm(N, mean = 0,
 Y_7 <- 0.5 + as.matrix(X)%*%beta_p_7 + treated_7 * beta_d_7 + rnorm(N, mean = 0, sd = (max(beta_d_7)-min(beta_d_7))/10)
 Y_8 <- 0.5 + as.matrix(X)%*%beta_p_8 + treated_8 * beta_d_8 + rnorm(N, mean = 0, sd = (max(beta_d_8)-min(beta_d_8))/10)
 
+Ys <- list(Y_1, Y_2, Y_3, Y_4,
+           Y_5, Y_6, Y_7, Y_8)
 
 #######################################################
 ###################### Simulation #####################
@@ -442,19 +444,178 @@ for(dgps in 5:8){
   
 }
 
+#Obtain weights from Super Learning
+weigths <- mapply(function(x, y) lsqlincon(as.matrix(x), y[sort(sample)],
+                                           Aeq = matrix(rep(1, ncol(x)), nrow = 1),
+                                           beq = c(1),
+                                           lb = rep(0, ncol(x)), ub = rep(1, ncol(x))),
+                  Y_hats, Ys)
 
 
-#all M component methods using all remaining D − 1-folds for training.
+#######################################################
+############## Counterfactial Estimation ##############
+#######################################################
+
+Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
+                                     dimnames = list(sort(sample),
+                                                     c('ElasticNet', 'KRLS', 'RLearner',
+                                                       'CausalForest', 'BGLM', 'BCF'))))),
+              times = 8)
+
+### Y_1_hat to Y_4_hat ###
+for(dgps in 1:4){
+  
+  print(paste('Counterfactual estimation for DGP ', dgps,
+              ' out of 8 of iteration ', it,
+              ' out of ', iterations, '.', sep = ''))
+  
+  Y_hat <- Y_hats[[dgps]]
+  treated <- treateds[[dgps]]
+  
+
+  X_sample <- model.matrix(~as.matrix(X[sample,])*treated[sample])
+  
+  colnames(X_sample) <- str_remove(str_remove(colnames(X_sample), 'as.matrix\\(X\\[sample, \\]\\)'), '_1\\[sample\\]')
+  base_variables <- which(colnames(X_sample) %in% base_variables_name)
+  
+  D_sample <- treated[sample]
+  Y_training_sample <- Y_1[sample]
+  
+  test_units <- sort(folds[[fl]])
+  test_sample <- model.matrix(~as.matrix(X[test_units,])*treated[test_units])
+  colnames(test_sample) <- str_remove(str_remove(colnames(X_sample), 'as.matrix\\(X\\[test_units, \\]\\)'), '_1\\[test_units\\]')
+  
+  X_test_sample <- X[test_units,]
+  D_test_sample <- treated[test_units]
+  
+  
+  #### Elastic-Net ####
+  EN_fit <- cv.glmnet(as.matrix(X_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
+  Y_hat[which(rownames(Y_hat) %in% test_units),'ElasticNet'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(test_sample))
+  
+  
+  #### KRLS ####
+  non_constant <- which(!apply(X_sample[,base_variables], MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
+  KRLS_fit <- krls(X = X_sample[,base_variables][,non_constant], y = Y_training_sample, derivative = FALSE)
+  Y_hat[which(rownames(Y_hat) %in% test_units),'KRLS'] <- predict(KRLS_fit, newdata = test_sample[,base_variables][,non_constant])$fit
+  
+  
+  #### R-Learner ####
+  r_fit <- rboost(as.matrix(X_sample[,base_variables]), D_sample, Y_training_sample)
+  r_pred <- predict(r_fit, as.matrix(test_sample[,base_variables]), tau_only = FALSE)
+  Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==1)]),'RLearner'] <- r_pred$mu1[which(D_test_sample==1)]
+  Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==0)]),'RLearner'] <- r_pred$mu0[which(D_test_sample==0)]
+  
+  
+  #### Random Forest ####
+  CF_fit <- randomForest(y = Y_training_sample, x = X_sample[,base_variables])
+  Y_hat[which(rownames(Y_hat) %in% test_units),'CausalForest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
+  
+  
+  #### BGLM ####
+  #Check if base variables are indeed the correct choice
+  BGLM_fit <- bayesglm(Y_training_sample ~ X_sample[,base_variables])
+  Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
+  
+  
+  #### BCF ####
+  BART_fit <- bart(x.train = X_sample[,base_variables], y.train = Y_training_sample,
+                   x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
+  Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+  
+  gc()
+  
+  Y_hats[[dgps]] <- Y_hat
+  
+}
 
 
-#Obtain N × M matrix for Y per DGP, whereby Yi,m stands for unit i’s out of sample prediction from method m.
+### Y_5_hat to Y_8_hat ###
 
+#Add dummy variables for heterogeneous group association
+colnams <- c(colnames(X), 'hetero_factor')
+X_dummy <- cbind(X, floor(X[,'binomialXstudentst']))
+colnames(X_dummy) <- colnams
+X_dummy <- dummy_cols(X_dummy, select_columns = 'hetero_factor')
+X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
 
-#Regress true response on out of sample predictions (Yi = 􏰋M wmYi,m + εi) i=1 per DGP with constraints 􏰋Mi=1 wm = 1 and wm ≥ 0, whereby ε is an error term.
+#Add dummies to base variable description
+dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
 
-
-#Obtain solutions to constrained regression w􏰎 as weights for final Ensemble per DGP.
-
+for(dgps in 5:8){
+  
+  print(paste('Super Learning for DGP ', dgps,
+              ' out of 8 of iteration ', it,
+              ' out of ', iterations, '.', sep = ''))
+  
+  Y_hat <- Y_hats[[dgps]]
+  treated <- treateds[[dgps]]
+  
+  for(fl in 1:f){
+    
+    print(paste('Fold ', fl, ' out of ', f,
+                ' of Super Learning for DGP ', dgps,
+                ' out of 8 of iteration ', it,
+                ' out of ', iterations, '.', sep = ''))
+    
+    training_units <- sort(unlist(folds[c(1:10)[-fl]]))
+    training_sample <- model.matrix(~as.matrix(X_dummy[training_units,])*treated[training_units])
+    
+    colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X_dummy\\[training_units, \\]\\)'), '_1\\[training_units\\]')
+    base_variables <- c(which(colnames(training_sample) %in% base_variables_name), dum_vars)
+    
+    D_training_sample <- treated[training_units]
+    Y_training_sample <- Y_1[training_units]
+    
+    test_units <- sort(folds[[fl]])
+    test_sample <- model.matrix(~as.matrix(X_dummy[test_units,])*treated[test_units])
+    colnames(test_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X_dummy\\[test_units, \\]\\)'), '_1\\[test_units\\]')
+    
+    X_test_sample <- X_dummy[test_units,]
+    D_test_sample <- treated[test_units]
+    
+    
+    #### Elastic-Net ####
+    EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'ElasticNet'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(test_sample))
+    
+    
+    #### KRLS ####
+    non_constant <- which(!apply(training_sample[,base_variables], MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
+    KRLS_fit <- krls(X = training_sample[,base_variables][,non_constant], y = Y_training_sample, derivative = FALSE)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'KRLS'] <- predict(KRLS_fit, newdata = test_sample[,base_variables][,non_constant])$fit
+    
+    
+    #### R-Learner ####
+    r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
+    r_pred <- predict(r_fit, as.matrix(test_sample[,base_variables]), tau_only = FALSE)
+    Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==1)]),'RLearner'] <- r_pred$mu1[which(D_test_sample==1)]
+    Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==0)]),'RLearner'] <- r_pred$mu0[which(D_test_sample==0)]
+    
+    
+    #### Random Forest ####
+    CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
+    Y_hat[which(rownames(Y_hat) %in% test_units),'CausalForest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
+    
+    
+    #### BGLM ####
+    #Check if base variables are indeed the correct choice
+    BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
+    Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
+    
+    
+    #### BCF ####
+    BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
+                     x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+    
+    gc()
+    
+  }
+  
+  Y_hats[[dgps]] <- Y_hat
+  
+}
 
 #Obtain estimates for heterogeneous treatment effects per DGP using the full sample by all nine component methods, following the procedures outlined throughout chapter 2.3 and OLS as a benchmark.
 
