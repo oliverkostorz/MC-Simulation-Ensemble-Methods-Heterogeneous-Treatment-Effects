@@ -1,6 +1,7 @@
-#Next steps: 2. Fix weigthing solution 3. Include fake variables
-# 4. Fix bad estimation results in non-linear dgps
-# Check if every training iteration acutlally works
+#Next steps: 1. Fix glmnet error in DGP 2
+# 2. Fix weigthing solution
+# 3. Include fake variables
+# 4. Check if every training iteration acutlally works
 
 rm(list = ls(all.names = TRUE))
 set.seed(0815)
@@ -277,8 +278,6 @@ Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
                                                      c('ElasticNet', 'KRLS', 'RLearner',
                                                        'CausalForest', 'BGLM', 'BCF'))))),
               times = 8)
-
-write.csv()
                         
 ### Y_1_hat to Y_4_hat ###
 for(dgps in 2:2){
@@ -312,9 +311,7 @@ for(dgps in 2:2){
     
     X_test_sample <- X[test_units,]
     D_test_sample <- treated[test_units]
-    
-    non_constant <- which(!apply(training_sample, MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
-    non_na <- which(apply(training_sample, MARGIN = 2, function(x) sum(is.na(x)) == 0))
+
     
     #### Elastic-Net ####
     EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
