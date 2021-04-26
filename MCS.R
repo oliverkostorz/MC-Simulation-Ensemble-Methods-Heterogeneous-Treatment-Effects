@@ -1,6 +1,6 @@
-#Next steps: 1. Make N smaller again, 2. Fix weigthing solution 3. Include fake variables
+#Next steps: 2. Fix weigthing solution 3. Include fake variables
 # 4. Fix bad estimation results in non-linear dgps
-
+# Check if every training iteration acutlally works
 
 rm(list = ls(all.names = TRUE))
 set.seed(0815)
@@ -23,10 +23,10 @@ source('functions.R')
 ############## Set simulation parameters ##############
 #######################################################
 #Simulation size
-N <- 10000L
-sample_size <- 1000L #Only choose sample sizes which are multiples of f or amend code for sampling folds
+N <- 1000L
+sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
 iterations <- 1L
-f <- 10L #Folds for Super Learning
+f <- 5L #Folds for Super Learning
 
 #######################################################
 
@@ -277,9 +277,11 @@ Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
                                                      c('ElasticNet', 'KRLS', 'RLearner',
                                                        'CausalForest', 'BGLM', 'BCF'))))),
               times = 8)
+
+write.csv()
                         
 ### Y_1_hat to Y_4_hat ###
-for(dgps in 1:4){
+for(dgps in 2:2){
   
   print(paste('Super Learning for DGP ', dgps,
               ' out of 8 of iteration ', it,
@@ -302,7 +304,7 @@ for(dgps in 1:4){
     base_variables <- which(colnames(training_sample) %in% base_variables_name)
     
     D_training_sample <- treated[training_units]
-    Y_training_sample <- Y_1[training_units]
+    Y_training_sample <- Ys[[dgps]][training_units]
     
     test_units <- sort(folds[[fl]])
     test_sample <- model.matrix(~as.matrix(X[test_units,])*treated[test_units])
@@ -311,6 +313,8 @@ for(dgps in 1:4){
     X_test_sample <- X[test_units,]
     D_test_sample <- treated[test_units]
     
+    non_constant <- which(!apply(training_sample, MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
+    non_na <- which(apply(training_sample, MARGIN = 2, function(x) sum(is.na(x)) == 0))
     
     #### Elastic-Net ####
     EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
@@ -390,7 +394,7 @@ for(dgps in 5:8){
     base_variables <- c(which(colnames(training_sample) %in% base_variables_name), dum_vars)
     
     D_training_sample <- treated[training_units]
-    Y_training_sample <- Y_1[training_units]
+    Y_training_sample <- Ys[[dgps]][training_units]
     
     test_units <- sort(folds[[fl]])
     test_sample <- model.matrix(~as.matrix(X_dummy[test_units,])*treated[test_units])
@@ -441,6 +445,14 @@ for(dgps in 5:8){
   Y_hats[[dgps]] <- Y_hat
   
 }
+
+y <- Ys[[2]][sort(sample)]
+x <- Y_hats[[1]]
+
+lsqlincon(as.matrix(x), y,
+          Aeq = matrix(rep(1, ncol(x)), nrow = 1),
+          beq = c(1),
+          lb = rep(0, ncol(x)), ub = rep(1, ncol(x)))
 
 #Obtain weights from Super Learning
 weigths <- mapply(function(x, y) lsqlincon(as.matrix(x), y[sort(sample)],
