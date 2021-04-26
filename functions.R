@@ -11,7 +11,7 @@ custom_sinc <- function(df){
   
   colnames_sinc <- paste('sinc_', colnames, sep = '')
   
-  df_sinc <- exp(df)
+  df_sinc <- sinc(df)
   
   colnames(df_sinc) <- colnames_sinc
   
