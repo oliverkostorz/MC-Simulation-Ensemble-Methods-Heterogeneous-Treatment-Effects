@@ -1,7 +1,7 @@
-#Next steps: 1. Fix glmnet error in DGP 2
+#Next steps: 1. 
 # 2. Fix weigthing solution
-# 3. Include fake variables
-# 4. Check if every training iteration acutlally works
+# 3. Include fake variables and add them to base variable description
+# 4. 
 
 rm(list = ls(all.names = TRUE))
 set.seed(0815)
@@ -47,7 +47,7 @@ poissonbinomial <- rpoisbinom(N, 0.4)
 binomial <- rbinom(N, 6, 0.5) - 2
 
 #Hypergeometric
-hypergeometric <- rhyper(N, N/3, 2*N/3, 50)
+hypergeometric <- rhyper(N, N/3, 2*N/3, 25)
 
 #Geometric distribution
 geometric <- rgeom(N, 0.3)
@@ -68,7 +68,7 @@ wrappedcauchy <- rwrappedcauchy(N, mu = circular(4), rho = exp(-100))
 wrappednormal <- rwrappednormal(N, mu = circular(-4), sd = 9)
 
 #Chi-squared distribution
-chisquared <- rchisq(N, 4)
+chisquared <- rchisq(N, 1)
 
 #Exponential distribution
 exponential <- rexp(N, rate = 10)
@@ -77,19 +77,19 @@ exponential <- rexp(N, rate = 10)
 gamma <- rgamma(N, 0.8, scale = 1/1.5)
 
 #Log-normal distribution 
-lognormal <- rlnorm(N, meanlog = -2, sdlog = 4)
+lognormal <- rlnorm(N, meanlog = -2, sdlog = 1)
 
 #Weibull distribution
 weibull <- rweibull(N, 0.9, scale = 1)
 
 #Gumbel distribution
-gumbel <- rgumbel(N, loc = -5, scale = 10)
+gumbel <- rgumbel(N, loc = -5, scale = 2)
 
 #Laplace distribution
-laplace <- rlaplace(N, mu = 100, sigma = 5)
+laplace <- rlaplace(N, mu = 10, sigma = 2)
 
 #Logistic distribution
-logistic <- rlogis(N, location = 0, scale = 9)
+logistic <- rlogis(N, location = 0, scale = 2)
 
 #Normal distribution
 normal <- rnorm(N, mean = -5, sd = 5)
@@ -206,6 +206,7 @@ treated_8 <- as.numeric(rbernoulli(N, p = prop_score_8))
 treateds <- list(treated_1, treated_2, treated_3, treated_4,
                  treated_5, treated_6, treated_7, treated_8)
 
+
 #Calculate outcomes Y per DGP
 Y_1 <- 0.5 + as.matrix(X)%*%beta_p_1 + treated_1 * beta_d_1 + rnorm(N, mean = 0, sd = (max(beta_d_1)-min(beta_d_1))/10)
 Y_2 <- 0.5 + as.matrix(X)%*%beta_p_2 + treated_2 * beta_d_2 + rnorm(N, mean = 0, sd = (max(beta_d_2)-min(beta_d_2))/10)
@@ -218,6 +219,7 @@ Y_8 <- 0.5 + as.matrix(X)%*%beta_p_8 + treated_8 * beta_d_8 + rnorm(N, mean = 0,
 
 Ys <- list(Y_1, Y_2, Y_3, Y_4,
            Y_5, Y_6, Y_7, Y_8)
+
 
 #######################################################
 ###################### Simulation #####################
@@ -278,9 +280,10 @@ Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
                                                      c('ElasticNet', 'KRLS', 'RLearner',
                                                        'CausalForest', 'BGLM', 'BCF'))))),
               times = 8)
-                        
+
+
 ### Y_1_hat to Y_4_hat ###
-for(dgps in 2:2){
+for(dgps in 1:4){
   
   print(paste('Super Learning for DGP ', dgps,
               ' out of 8 of iteration ', it,
@@ -325,11 +328,12 @@ for(dgps in 2:2){
     
     
     #### R-Learner ####
+    remove(r_fit)
     r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
     r_pred <- predict(r_fit, as.matrix(test_sample[,base_variables]), tau_only = FALSE)
     Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==1)]),'RLearner'] <- r_pred$mu1[which(D_test_sample==1)]
     Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==0)]),'RLearner'] <- r_pred$mu0[which(D_test_sample==0)]
-    
+
     
     #### Random Forest ####
     CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
@@ -368,7 +372,7 @@ X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
 #Add dummies to base variable description
 dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
 
-for(dgps in 5:8){
+for(dgps in 8:8){
   
   print(paste('Super Learning for DGP ', dgps,
               ' out of 8 of iteration ', it,

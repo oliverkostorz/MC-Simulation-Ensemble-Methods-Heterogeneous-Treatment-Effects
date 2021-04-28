@@ -77,4 +77,3 @@ custom_crossprod <- function(df){
   return(cross_df)
   
 }
-
