@@ -1,5 +1,5 @@
 #Next steps: 1. 
-# 2.
+# 2. Save estimates and real effects in matrix and iterate
 # 3. Include fake variables and add them to base variable description
 # 4. 
 
@@ -448,7 +448,7 @@ for(dgps in 5:8){
 }
 
 #Obtain weights from Super Learning
-weigths <- mapply(function(x, y) lsqlincon(as.matrix(x/10000), y[sort(sample)]/10000,
+wei <- mapply(function(x, y) lsqlincon(as.matrix(x/10000), y[sort(sample)]/10000,
                                            Aeq = matrix(rep(1, ncol(x)), nrow = 1),
                                            beq = c(1),
                                            lb = rep(0, ncol(x)), ub = rep(1, ncol(x))),
@@ -482,7 +482,7 @@ for(dgps in 1:4){
   base_variables <- which(colnames(X_sample) %in% base_variables_name)
   
   D_sample <- treated[sort(sample)]
-  Y_sample <- Y_1[sort(sample)]
+  Y_sample <- Ys[[dgps]][sort(sample)]
   
   counterfactual_sample <- model.matrix(~as.matrix(X[sort(sample),])*+(!treated[sort(sample)]))
   colnames(counterfactual_sample) <- colnames(X_sample)
@@ -560,7 +560,7 @@ for(dgps in 5:8){
   base_variables <- c(which(colnames(X_sample) %in% base_variables_name), dum_vars)
   
   D_sample <- treated[sort(sample)]
-  Y_sample <- Y_1[sort(sample)]
+  Y_sample <- Ys[[dgps]][sort(sample)]
   
   counterfactual_sample <- model.matrix(~as.matrix(X_dummy[sort(sample),])*+(!treated[sort(sample)]))
   colnames(counterfactual_sample) <- colnames(X_sample)
@@ -640,9 +640,11 @@ for(i in 1:8){
 }
 
 
+#Obtain Ensemble Estimates
+tau_EM <- mapply(function(x, y) as.matrix(x) %*% y,
+                 taus, wei, SIMPLIFY = FALSE)
 
-
-#Calculate heterogeneous treatment effect estimates per DGP by a naive Ensemble and by Super Learning with weights from step 11.t
+#Save estimates and real effects in matrix and iterate
 
 #Iterate through steps 3 to 14 with different sample sizes N.
 
