@@ -1,5 +1,5 @@
 #Next steps: 1. 
-# 2. Fix weigthing solution
+# 2.
 # 3. Include fake variables and add them to base variable description
 # 4. 
 
@@ -12,7 +12,7 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 #Import packages
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
                sets,glmnet,KRLS,mboost,devtools,stringr,randomForest,arm,
-               BayesTree,bcf,fastDummies,pracma,quadprog)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
+               BayesTree,bcf,fastDummies,pracma,quadprog,constrOptim)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
 #install_github('xnie/rlearner')
 library(rlearner)
 
@@ -372,7 +372,7 @@ X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
 #Add dummies to base variable description
 dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
 
-for(dgps in 8:8){
+for(dgps in 5:8){
   
   print(paste('Super Learning for DGP ', dgps,
               ' out of 8 of iteration ', it,
@@ -447,16 +447,8 @@ for(dgps in 8:8){
   
 }
 
-y <- Ys[[2]][sort(sample)]
-x <- Y_hats[[1]]
-
-lsqlincon(as.matrix(x), y,
-          Aeq = matrix(rep(1, ncol(x)), nrow = 1),
-          beq = c(1),
-          lb = rep(0, ncol(x)), ub = rep(1, ncol(x)))
-
 #Obtain weights from Super Learning
-weigths <- mapply(function(x, y) lsqlincon(as.matrix(x), y[sort(sample)],
+weigths <- mapply(function(x, y) lsqlincon(as.matrix(x/10000), y[sort(sample)]/10000,
                                            Aeq = matrix(rep(1, ncol(x)), nrow = 1),
                                            beq = c(1),
                                            lb = rep(0, ncol(x)), ub = rep(1, ncol(x))),
