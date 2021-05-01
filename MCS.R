@@ -1,5 +1,6 @@
 #Next steps: 1. Include fake variables and add them to base variable description
 # 2. Delete not used packages
+# 3. Run in parallel
 
 
 rm(list = ls(all.names = TRUE))
@@ -25,8 +26,10 @@ source('functions.R')
 #Simulation size
 N <- 1000L
 sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 10L
+iterations <- 5L
 f <- 10L #Folds for Super Learning
+
+sim_pars <- list(N, sample_size, iterations, f)
 
 #######################################################
 
@@ -205,6 +208,16 @@ treated_8 <- as.numeric(rbernoulli(N, p = prop_score_8))
 treateds <- list(treated_1, treated_2, treated_3, treated_4,
                  treated_5, treated_6, treated_7, treated_8)
 
+beta_ps <- list(beta_p_1, beta_p_2, beta_p_3, beta_p_4, 
+                beta_p_5, beta_p_6, beta_p_7, beta_p_8)
+
+beta_ds <- list(beta_d_1, beta_d_2, beta_d_3, beta_d_4, 
+                beta_d_5, beta_d_6, beta_d_7, beta_d_8)
+
+prop_scores <- list(prop_score_linear,
+                    prop_score_2, prop_score_4,
+                    prop_score_6, prop_score_8)
+
 
 #Calculate outcomes Y per DGP
 Y_1 <- 0.5 + as.matrix(X)%*%beta_p_1 + treated_1 * beta_d_1 + rnorm(N, mean = 0, sd = (max(beta_d_1)-min(beta_d_1))/10)
@@ -241,6 +254,10 @@ start_time <- Sys.time()
 
 #Create folder for output
 dir.create(file.path(getwd(), paste('/output/', start_time, sep = '')))
+
+#Save coefficients for descriptive evidence
+save(sim_pars, X, Ys, treateds, beta_ps, beta_ds, prop_scores,
+     file = paste(getwd(), '/output/', start_time, '/coefs.RData', sep = ''))
 
 for(it in 1:iterations){
   
@@ -674,11 +691,14 @@ for(it in 1:iterations){
     row_start <- it * sample_size - sample_size + 1
     row_end <- it * sample_size
     
+    beta_d <- beta_ds[[i]]
+    
     #Receive new information
     dgp <- output[[i]]
     tau <- taus[[i]]
     EM_NE <- tau_EM_NE[[i]]
     EM_SL <- tau_EM_SL[[i]]
+    
     
     #Receive previous information
     EN <- dgp[[1]]
@@ -700,14 +720,14 @@ for(it in 1:iterations){
     NE[row_start:row_end,1] <- EM_NE
     SL[row_start:row_end,1] <- EM_SL
     
-    EN[row_start:row_end,2] <- beta_d_1[sort(sample)]
-    KRLS[row_start:row_end,2] <- beta_d_2[sort(sample)]
-    RL[row_start:row_end,2] <- beta_d_3[sort(sample)]
-    CF[row_start:row_end,2] <- beta_d_4[sort(sample)]
-    BGLM[row_start:row_end,2] <- beta_d_5[sort(sample)]
-    BCF[row_start:row_end,2] <- beta_d_6[sort(sample)]
-    NE[row_start:row_end,2] <- beta_d_7[sort(sample)]
-    SL[row_start:row_end,2] <- beta_d_8[sort(sample)]
+    EN[row_start:row_end,2] <- beta_d[sort(sample)]
+    KRLS[row_start:row_end,2] <- beta_d[sort(sample)]
+    RL[row_start:row_end,2] <- beta_d[sort(sample)]
+    CF[row_start:row_end,2] <- beta_d[sort(sample)]
+    BGLM[row_start:row_end,2] <- beta_d[sort(sample)]
+    BCF[row_start:row_end,2] <- beta_d[sort(sample)]
+    NE[row_start:row_end,2] <- beta_d[sort(sample)]
+    SL[row_start:row_end,2] <- beta_d[sort(sample)]
     
     #Save updated information
     dgp[[1]] <- EN
@@ -724,7 +744,7 @@ for(it in 1:iterations){
   }
   
   #Write current status to disk
-  save(output, file = paste(getwd(), '/output/', start_time, '/output.RData', sep = '/'))
+  save(output, file = paste(getwd(), '/output/', start_time, '/output.RData', sep = ''))
   
   gc()
   
@@ -751,3 +771,4 @@ print(paste('Total time elapsed: ',
             ifelse(minutes==1, paste(minutes, ' minute, ', sep = ''), ''),
             seconds, ' seconds.',
             sep = ''))
+
