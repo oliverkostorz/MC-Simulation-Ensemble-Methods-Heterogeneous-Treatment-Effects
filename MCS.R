@@ -630,11 +630,6 @@ for(it in 1:iterations){
     
   }
   
-  save(Ys, Y_hats, wei, file = paste(getwd(), '/data.RData', sep = ''))
-  
-  ##
-  #Load priliminarily data for development process
-  load(paste(getwd(), '/data.RData', sep = ''))
   
   #######################################################
   ################# Effect Calculation ##################
@@ -676,8 +671,8 @@ for(it in 1:iterations){
   #Save estimates and real effects to matrix
   for(i in 1:length(output)){
     
-    row_start <- iterations * sample_size - sample_size + 1
-    row_end <- iterations * sample_size
+    row_start <- it * sample_size - sample_size + 1
+    row_end <- it * sample_size
     
     #Receive new information
     dgp <- output[[i]]
