@@ -1,6 +1,7 @@
 #Next steps: 1. Include fake variables and add them to base variable description
 # 2. Delete not used packages
-# 3. Find out how much RAM the loop needs and assign resepctive numbers of cores -> Split for loop smarlty to get itermediate feedback
+# 3. Run in parallel
+# 4. Find out how much RAM the loop needs and assign resepctive numbers of cores
 
 
 rm(list = ls(all.names = TRUE))
@@ -27,7 +28,7 @@ source('functions.R')
 N <- 1000L
 sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
 iterations <- 5L
-f <- 5L #Folds for Super Learning
+f <- 10L #Folds for Super Learning
 
 sim_pars <- list(N, sample_size, iterations, f)
 
@@ -237,6 +238,18 @@ Ys <- list(Y_1, Y_2, Y_3, Y_4,
 ###################### Simulation #####################
 #######################################################
 
+#Generate matrix to fill with output value
+#Elements of list = DGPs, first column of elements = estimate, second = true value
+output <- lapply(c(1:8), function(i) assign(paste('dgp_', i, sep = ''),
+                                            list(EN = matrix(data = NA, ncol = 2, nrow = sample_size * iterations),
+                                                 KRLS = matrix(data = NA, ncol = 2, nrow = sample_size * iterations),
+                                                 RL = matrix(data = NA, ncol = 2, nrow = sample_size * iterations),
+                                                 CF = matrix(data = NA, ncol = 2, nrow = sample_size * iterations),
+                                                 BGLM = matrix(data = NA, ncol = 2, nrow = sample_size * iterations),
+                                                 BCF = matrix(data = NA, ncol = 2, nrow = sample_size * iterations),
+                                                 NE = matrix(data = NA, ncol = 2, nrow = sample_size * iterations),
+                                                 SL = matrix(data = NA, ncol = 2, nrow = sample_size * iterations))))
+
 #Take time of simulation process                                          
 start_time <- Sys.time()
 
@@ -248,19 +261,42 @@ save(sim_pars, X, Ys, treateds, beta_ps, beta_ds, prop_scores,
      file = paste(getwd(), '/output/', start_time, '/coefs.RData', sep = ''))
 
 
+### Simulation iterations
 #Setup for parallel computing
 n.cores <- detectCores() - 1
 my.cluster <- makeCluster(n.cores, type = 'PSOCK', setup_strategy = 'sequential')
 print(my.cluster)
 
-### Simulation iterations
 registerDoParallel(cl = my.cluster)
 
-output <- foreach(it = 1:iterations, .inorder = FALSE,
-                  .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
-                                'devtools', 'stringr', 'randomForest',
-                                'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                'pracma', 'quadprog', 'rlearner', 'BBmisc')) %dopar% {
+for(it in 1:iterations){
+  
+  #Print operational information
+  now <- Sys.time()
+  diff <- as.numeric(now) - as.numeric(start_time)
+  
+  days <- floor(diff/(60*60*24))
+  hours <- floor(diff/(60*60)-days*24)
+  minutes <- floor(diff/60-hours*60-days*24*60)
+  seconds <- round(diff-minutes*60-hours*60*60-days*24*60*60)
+  
+  total_time_est <- diff/it*iterations
+  end_time_est <- as.numeric(start_time) + total_time_est
+  
+  print(paste('Beginn iteration ', it, ' of ', iterations, '.', sep = ''))
+  print(paste('Time elapsed: ',
+              ifelse(days>1, paste(days, ' days, ', sep = ''), ''),
+              ifelse(days==1, paste(days, ' day, ', sep = ''), ''),
+              ifelse(hours>1, paste(hours, ' hours, ', sep = ''), ''),
+              ifelse(hours==1, paste(hours, ' hour, ', sep = ''), ''),
+              ifelse(minutes>1, paste(minutes, ' minutes, ', sep = ''), ''),
+              ifelse(minutes==1, paste(minutes, ' minute, ', sep = ''), ''),
+              seconds, ' seconds.',
+              sep = ''))
+  print(paste('Estimated time of completion: ',
+              as.POSIXct(end_time_est, origin = "1970-01-01"),
+              sep = ''))
+  
   
   #Randomly draw N pairs of outcomes and covariates plus treatment status
   sample <- sample(x = 1:N, size = sample_size)
@@ -280,14 +316,23 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                                                        c('ElasticNet', 'KRLS', 'RLearner',
                                                          'CausalForest', 'BGLM', 'BCF'))))),
                 times = 8)
-  
+
   ### Y_1_hat to Y_4_hat ###
   for(dgps in 1:4){
-
+    
+    print(paste('Super Learning for DGP ', dgps,
+                ' out of 8 of iteration ', it,
+                ' out of ', iterations, '.', sep = ''))
+    
     Y_hat <- Y_hats[[dgps]]
     treated <- treateds[[dgps]]
     
     for(fl in 1:f){
+      
+      print(paste('Fold ', fl, ' out of ', f,
+                  ' of Super Learning for DGP ', dgps,
+                  ' out of 8 of iteration ', it,
+                  ' out of ', iterations, '.', sep = ''))
       
       training_units <- sort(unlist(folds[c(1:10)[-fl]]))
       training_sample <- model.matrix(~as.matrix(X[training_units,])*treated[training_units])
@@ -349,7 +394,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     
   }
   
-  
+
   ### Y_5_hat to Y_8_hat ###
   
   #Add dummy variables for heterogeneous group association
@@ -439,10 +484,10 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   
   #Obtain weights from Super Learning (needs to be scaled for technical reasons for large Y_i)
   wei <- try(mapply(function(x, y) lsqlincon(as.matrix(x), y[sort(sample)],
-                                             Aeq = matrix(rep(1, ncol(x)), nrow = 1),
-                                             beq = c(1),
-                                             lb = rep(0, ncol(x)), ub = rep(1, ncol(x))),
-                    Y_hats, Ys, SIMPLIFY = FALSE))  
+                                           Aeq = matrix(rep(1, ncol(x)), nrow = 1),
+                                           beq = c(1),
+                                           lb = rep(0, ncol(x)), ub = rep(1, ncol(x))),
+                  Y_hats, Ys, SIMPLIFY = FALSE))  
   
   scale <- 1
   while(is.error(wei)){
@@ -470,6 +515,10 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   
   ### Y_1_hat to Y_4_hat ###
   for(dgps in 1:4){
+    
+    print(paste('Counterfactual estimation for DGP ', dgps,
+                ' out of 8 of iteration ', it,
+                ' out of ', iterations, '.', sep = ''))
     
     Y_hat <- Y_hats[[dgps]]
     treated <- treateds[[dgps]]
@@ -545,6 +594,10 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   ### Y_5_hat to Y_8_hat ###
   for(dgps in 5:8){
     
+    print(paste('Counterfactual estimation for DGP ', dgps,
+                ' out of 8 of iteration ', it,
+                ' out of ', iterations, '.', sep = ''))
+    
     Y_hat <- Y_hats[[dgps]]
     treated <- treateds[[dgps]]
     
@@ -608,9 +661,31 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   ################# Effect Calculation ##################
   #######################################################
   
-  #Obtain effect estimates per technique
-  taus <- mapply(function(y, y_h, d) apply(y_h, MARGIN = 2, FUN = function(x)  ifelse(d[sort(sample)] == 1, y[sort(sample)] - x, x - y[sort(sample)])),
-                 Ys, Y_hats, treateds, SIMPLIFY = FALSE)
+  #Obtain effect estimates per techique
+  taus <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
+                                     dimnames = list(sort(sample),
+                                                     c('ElasticNet', 'KRLS', 'RLearner',
+                                                       'CausalForest', 'BGLM', 'BCF'))))),
+              times = 8)
+  
+  for(i in 1:8){
+    
+    observed <- Ys[[i]][sort(sample)]
+    counter <- Y_hats[[i]]
+    treatment <- treateds[[i]][sort(sample)]
+    tau <- taus[[i]]
+    
+    for(j in 1:ncol(tau)){
+      
+      tau[,j] <- ifelse(treatment==1,
+                        observed - counter[,j],
+                        counter[,j] - observed)
+      
+    }
+    
+    taus[[i]] <- tau
+    
+  }
   
   #Obtain estimates of Naive Ensemble
   tau_EM_NE <- lapply(taus, function(x) as.matrix(x) %*% c(rep(1/ncol(x), times = ncol(x))))
@@ -620,72 +695,72 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                       taus, wei, SIMPLIFY = FALSE)
   
   #Save estimates and real effects to matrix
-  #Elements of list = DGPs
-  output <- mapply(function(b, t, ne, sl) data.frame(EN = t[,1],
-                                                     KRLS = t[,2],
-                                                     RL = t[,3],
-                                                     CF = t[,4],
-                                                     BGLM = t[,5],
-                                                     BCF = t[,6],
-                                                     NE = ne,
-                                                     SL = sl,
-                                                     true = b[sort(sample)]),
-                   beta_ds, taus, tau_EM_NE, tau_EM_SL, SIMPLIFY = FALSE)
+  for(i in 1:length(output)){
+    
+    row_start <- it * sample_size - sample_size + 1
+    row_end <- it * sample_size
+    
+    beta_d <- beta_ds[[i]]
+    
+    #Receive new information
+    dgp <- output[[i]]
+    tau <- taus[[i]]
+    EM_NE <- tau_EM_NE[[i]]
+    EM_SL <- tau_EM_SL[[i]]
+    
+    
+    #Receive previous information
+    EN <- dgp[[1]]
+    KRLS <- dgp[[2]]
+    RL <- dgp[[3]]
+    CF <- dgp[[4]]
+    BGLM <- dgp[[5]]
+    BCF <- dgp[[6]]
+    NE <- dgp[[7]]
+    SL <- dgp[[8]]
+    
+    #Add new information
+    EN[row_start:row_end,1] <- tau[,1]
+    KRLS[row_start:row_end,1] <- tau[,2]
+    RL[row_start:row_end,1] <- tau[,3]
+    CF[row_start:row_end,1] <- tau[,4]
+    BGLM[row_start:row_end,1] <- tau[,5]
+    BCF[row_start:row_end,1] <- tau[,6]
+    NE[row_start:row_end,1] <- EM_NE
+    SL[row_start:row_end,1] <- EM_SL
+    
+    EN[row_start:row_end,2] <- beta_d[sort(sample)]
+    KRLS[row_start:row_end,2] <- beta_d[sort(sample)]
+    RL[row_start:row_end,2] <- beta_d[sort(sample)]
+    CF[row_start:row_end,2] <- beta_d[sort(sample)]
+    BGLM[row_start:row_end,2] <- beta_d[sort(sample)]
+    BCF[row_start:row_end,2] <- beta_d[sort(sample)]
+    NE[row_start:row_end,2] <- beta_d[sort(sample)]
+    SL[row_start:row_end,2] <- beta_d[sort(sample)]
+    
+    #Save updated information
+    dgp[[1]] <- EN
+    dgp[[2]] <- KRLS
+    dgp[[3]] <- RL
+    dgp[[4]] <- CF
+    dgp[[5]] <- BGLM
+    dgp[[6]] <- BCF
+    dgp[[7]] <- NE
+    dgp[[8]] <- SL
+    
+    output[[i]] <- dgp
+    
+  }
   
-  return(output)
+  #Write current status to disk
+  save(output, file = paste(getwd(), '/output/', start_time, '/output.RData', sep = ''))
+  
+  gc()
   
 }
 
 #Stop parallel cluster
 stopCluster(cl = my.cluster)
-
-#Combine output of all iterations into handier list
-out_gdp1 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp1) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp2 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp2) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp3 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp3) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp4 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp4) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp5 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp5) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp6 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp6) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp7 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp7) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp8 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp8) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-
-for(i in 1:length(output)){
-  
-  start <- i * sample_size - sample_size + 1
-  end <- i * sample_size
-  
-  iter_out <- output[[i]]
-  out_gdp1[start:end,] <- iter_out[[1]]
-  out_gdp1[start:end,] <- iter_out[[2]]
-  out_gdp3[start:end,] <- iter_out[[3]]
-  out_gdp4[start:end,] <- iter_out[[4]]
-  out_gdp5[start:end,] <- iter_out[[5]]
-  out_gdp6[start:end,] <- iter_out[[6]]
-  out_gdp7[start:end,] <- iter_out[[7]]
-  out_gdp8[start:end,] <- iter_out[[8]]
-  
-}
-
-#Write output to disk
-save(out_gdp1, out_gdp2, out_gdp3, out_gdp4,
-     out_gdp5, out_gdp6, out_gdp7, out_gdp8,
-     file = paste(getwd(), '/output/', start_time, '/output.RData', sep = ''))
 
 #Print final operational information
 now <- Sys.time()
