@@ -1,7 +1,6 @@
 #Next steps: 1. Include fake variables and add them to base variable description
 # 2. Delete not used packages
-# 3. Find out how much RAM the loop needs and assign resepctive numbers of cores -> Split for loop smarlty to get itermediate feedback
-
+# 3. Find out how much RAM the loop needs and assign resepctive numbers of cores
 
 rm(list = ls(all.names = TRUE))
 set.seed(0815)
@@ -12,7 +11,8 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 #Import packages
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
                sets,glmnet,KRLS,mboost,devtools,stringr,randomForest,arm,
-               BayesTree,bcf,fastDummies,pracma,quadprog,BBmisc)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
+               BayesTree,bcf,fastDummies,pracma,quadprog,BBmisc,doParallel,
+               schoolmath)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
 #install_github('xnie/rlearner')
 library(rlearner)
 
@@ -23,15 +23,18 @@ source('functions.R')
 #######################################################
 ############## Set simulation parameters ##############
 #######################################################
+
+#RUN IN TERMINAL BEFORE SIMULATION: nc -l 4000
+
 #Simulation size
 N <- 1000L
 sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 5L
-f <- 5L #Folds for Super Learning
+iterations <- 2L
+f <- 10L #Folds for Super Learning
+n_pseudo <- 10 #Number of pseudo variables
 
 sim_pars <- list(N, sample_size, iterations, f)
 
-#######################################################
 
 #######################################################
 ##################### Covariates ######################
@@ -121,6 +124,14 @@ sincvar <- custom_sinc(rvar_nonbinary)
 #Exponential transformation
 expvar <- custom_exp(rvar_nonbinary)
 
+#Create pseudo variables
+pseudovars <- as.data.frame(do.call(cbind, lapply(1:n_pseudo,
+                                                  function(x) ifelse(is.even(rep(x, times = N)),
+                                                                     rgamma(N, x/n_pseudo, rate = ceiling(sqrt(x))),
+                                                                     rbeta(N, x/n_pseudo, ceiling(sqrt(x)))))))
+                                                                     
+colnames(pseudovars) <- unlist(lapply(1:n_pseudo, function(x) paste('pseudo', x, sep = '_')))
+
 #Bind all covariates to dataframe
 X <- cbind(rvar, sincvar, expvar, crossvar)
 
@@ -132,12 +143,11 @@ X <- data.frame(apply(X, MARGIN = 2, function(c) unlist(lapply(c, function(z) if
 #Parameters for later stages in code
 p <- ncol(X)
 bXt <- which(colnames(X) == 'binomialXstudentst')
-#Don't forget to add pseudo covariates later on
 base_variables_name <- c('bernoulli', 'rademacher', 'poissonbinomial', 'binomial',
                          'hypergeometric', 'geometric', 'logarithmic', 'poisson',
                          'beta', 'wrappedcauchy', 'wrappednormal', 'chisquared',
                          'exponential', 'gamma', 'lognormal', 'weibull', 'gumbel',
-                         'laplace', 'logistic', 'normal', 'studentst')
+                         'laplace', 'logistic', 'normal', 'studentst', colnames(pseudovars))
 base_variables_name <- unlist(lapply(base_variables_name, function(x) c(x, paste(x, ':treated', sep = ''))))
 base_variables_name <- c(base_variables_name, 'treated')
 
@@ -233,12 +243,18 @@ Ys <- list(Y_1, Y_2, Y_3, Y_4,
            Y_5, Y_6, Y_7, Y_8)
 
 
+#Add pseudo variables to X
+X <- cbind(X, pseudovars)
+
 #######################################################
 ###################### Simulation #####################
 #######################################################
 
 #Take time of simulation process                                          
 start_time <- Sys.time()
+
+#Create socket for progress output
+log.socket <- make.socket(port = 4000)
 
 #Create folder for output
 dir.create(file.path(getwd(), paste('/output/', start_time, sep = '')))
@@ -260,31 +276,32 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                   .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                 'devtools', 'stringr', 'randomForest',
                                 'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                'pracma', 'quadprog', 'rlearner', 'BBmisc')) %dopar% {
+                                'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                'foreach')) %dopar% {
   
   #Randomly draw N pairs of outcomes and covariates plus treatment status
   sample <- sample(x = 1:N, size = sample_size)
   
-  
   #######################################################
   #################### Super Learner ####################
   #######################################################
-  
   #Randomly split sample into f folds
   folds <- split(sample, rep(1:ceiling(length(sample)/f), each = length(sample)/f)[1:length(sample)])
   
-  #DFs for out of sample predictions for Ys
-  #Columns are component methods M and Rows units i
-  Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
-                                       dimnames = list(sort(sample),
-                                                       c('ElasticNet', 'KRLS', 'RLearner',
-                                                         'CausalForest', 'BGLM', 'BCF'))))),
-                times = 8)
-  
+  #Out of sample predictions for Ys
   ### Y_1_hat to Y_4_hat ###
-  for(dgps in 1:4){
+  Y_hats_one <- foreach(dgps = 1:4, .inorder = FALSE,
+                        .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
+                                      'devtools', 'stringr', 'randomForest',
+                                      'arm', 'BayesTree', 'bcf', 'fastDummies',
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
 
-    Y_hat <- Y_hats[[dgps]]
+    Log('Started Super Learning for DGP %d of iteration %d.', dgps, it)
+                                      
+    Y_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
+                               dimnames = list(sort(sample),
+                                               c('ElasticNet', 'KRLS', 'RLearner',
+                                                 'CausalForest', 'BGLM', 'BCF'))))
     treated <- treateds[[dgps]]
     
     for(fl in 1:f){
@@ -305,17 +322,14 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       X_test_sample <- X[test_units,]
       D_test_sample <- treated[test_units]
       
-      
       #### Elastic-Net ####
       EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
       Y_hat[which(rownames(Y_hat) %in% test_units),'ElasticNet'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(test_sample))
-      
       
       #### KRLS ####
       non_constant <- which(!apply(training_sample[,base_variables], MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
       KRLS_fit <- krls(X = training_sample[,base_variables][,non_constant], y = Y_training_sample, derivative = FALSE)
       Y_hat[which(rownames(Y_hat) %in% test_units),'KRLS'] <- predict(KRLS_fit, newdata = test_sample[,base_variables][,non_constant])$fit
-      
       
       #### R-Learner ####
       remove(r_fit)
@@ -324,34 +338,28 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==1)]),'RLearner'] <- r_pred$mu1[which(D_test_sample==1)]
       Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==0)]),'RLearner'] <- r_pred$mu0[which(D_test_sample==0)]
       
-      
       #### Random Forest ####
       CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'CausalForest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
-      
       
       #### BGLM ####
       #Check if base variables are indeed the correct choice
       BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
       
-      
       #### BCF ####
       BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
                        x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
       Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
       
-      gc()
-      
     }
     
-    Y_hats[[dgps]] <- Y_hat
+    return(Y_hat)
     
   }
   
   
   ### Y_5_hat to Y_8_hat ###
-  
   #Add dummy variables for heterogeneous group association
   colnams <- c(colnames(X), 'hetero_factor')
   X_dummy <- cbind(X, floor(X[,'binomialXstudentst']))
@@ -362,21 +370,21 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   #Add dummies to base variable description
   dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
   
-  for(dgps in 5:8){
-    
-    print(paste('Super Learning for DGP ', dgps,
-                ' out of 8 of iteration ', it,
-                ' out of ', iterations, '.', sep = ''))
-    
-    Y_hat <- Y_hats[[dgps]]
+  Y_hats_two <- foreach(dgps = 5:8, .inorder = FALSE,
+                        .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
+                                      'devtools', 'stringr', 'randomForest',
+                                      'arm', 'BayesTree', 'bcf', 'fastDummies',
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                        
+    Log('Started Super Learning for DGP %d of iteration %d.', dgps, it)                 
+
+    Y_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
+                               dimnames = list(sort(sample),
+                                               c('ElasticNet', 'KRLS', 'RLearner',
+                                                 'CausalForest', 'BGLM', 'BCF'))))
     treated <- treateds[[dgps]]
     
     for(fl in 1:f){
-      
-      print(paste('Fold ', fl, ' out of ', f,
-                  ' of Super Learning for DGP ', dgps,
-                  ' out of 8 of iteration ', it,
-                  ' out of ', iterations, '.', sep = ''))
       
       training_units <- sort(unlist(folds[c(1:10)[-fl]]))
       training_sample <- model.matrix(~as.matrix(X_dummy[training_units,])*treated[training_units])
@@ -394,17 +402,14 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       X_test_sample <- X_dummy[test_units,]
       D_test_sample <- treated[test_units]
       
-      
       #### Elastic-Net ####
       EN_fit <- cv.glmnet(as.matrix(training_sample), Y_training_sample, type.measure = 'mse', alpha = .5)
       Y_hat[which(rownames(Y_hat) %in% test_units),'ElasticNet'] <- predict(EN_fit, s = EN_fit$lambda.1se, newx = as.matrix(test_sample))
-      
       
       #### KRLS ####
       non_constant <- which(!apply(training_sample[,base_variables], MARGIN = 2, function(x) max(x, na.rm = TRUE) == min(x, na.rm = TRUE)))
       KRLS_fit <- krls(X = training_sample[,base_variables][,non_constant], y = Y_training_sample, derivative = FALSE)
       Y_hat[which(rownames(Y_hat) %in% test_units),'KRLS'] <- predict(KRLS_fit, newdata = test_sample[,base_variables][,non_constant])$fit
-      
       
       #### R-Learner ####
       r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
@@ -412,30 +417,27 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==1)]),'RLearner'] <- r_pred$mu1[which(D_test_sample==1)]
       Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==0)]),'RLearner'] <- r_pred$mu0[which(D_test_sample==0)]
       
-      
       #### Random Forest ####
       CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'CausalForest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
-      
       
       #### BGLM ####
       #Check if base variables are indeed the correct choice
       BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
       
-      
       #### BCF ####
       BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
                        x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
       Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
       
-      gc()
-      
     }
     
-    Y_hats[[dgps]] <- Y_hat
-    
+    return(Y_hat)     
+  
   }
+
+  Y_hats <- c(Y_hats_one, Y_hats_two)
   
   #Obtain weights from Super Learning (needs to be scaled for technical reasons for large Y_i)
   wei <- try(mapply(function(x, y) lsqlincon(as.matrix(x), y[sort(sample)],
@@ -462,16 +464,21 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   ############## Counterfactial Estimation ##############
   #######################################################
   
-  Y_hats <- rep(list(data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
-                                       dimnames = list(sort(sample),
-                                                       c('ElasticNet', 'KRLS', 'RLearner',
-                                                         'CausalForest', 'BGLM', 'BCF'))))),
-                times = 8)
-  
   ### Y_1_hat to Y_4_hat ###
-  for(dgps in 1:4){
+  
+  Y_hats_one <- foreach(dgps = 1:4, .inorder = FALSE,
+                        .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
+                                      'devtools', 'stringr', 'randomForest',
+                                      'arm', 'BayesTree', 'bcf', 'fastDummies',
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                        
+    Log('Started Counterfactial Estimation for DGP %d of iteration %d.', dgps, it)
+  
+    Y_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
+                               dimnames = list(sort(sample),
+                                               c('ElasticNet', 'KRLS', 'RLearner',
+                                                 'CausalForest', 'BGLM', 'BCF'))))
     
-    Y_hat <- Y_hats[[dgps]]
     treated <- treateds[[dgps]]
     
     
@@ -523,9 +530,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                      x.test = counterfactual_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
     Y_hat[,'BCF'] <- colMeans(BART_fit$yhat.test)
     
-    Y_hats[[dgps]] <- Y_hat
     
-    gc()
+    return(Y_hat)
     
   }
   
@@ -543,11 +549,20 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
   
   ### Y_5_hat to Y_8_hat ###
-  for(dgps in 5:8){
-    
-    Y_hat <- Y_hats[[dgps]]
+  
+  Y_hats_two <- foreach(dgps = 5:8, .inorder = FALSE,
+                        .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
+                                      'devtools', 'stringr', 'randomForest',
+                                      'arm', 'BayesTree', 'bcf', 'fastDummies',
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                        
+    Log('Started Counterfactial Estimation for DGP %d of iteration %d.', dgps, it)
+                                        
+    Y_hat <- data.frame(matrix(data = NA, nrow = sample_size, ncol = 6,
+                               dimnames = list(sort(sample),
+                                               c('ElasticNet', 'KRLS', 'RLearner',
+                                                 'CausalForest', 'BGLM', 'BCF'))))
     treated <- treateds[[dgps]]
-    
     
     X_sample <- model.matrix(~as.matrix(X_dummy[sort(sample),])*treated[sort(sample)])
     
@@ -597,12 +612,11 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                      x.test = counterfactual_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
     Y_hat[,'BCF'] <- colMeans(BART_fit$yhat.test)
     
-    Y_hats[[dgps]] <- Y_hat
-    
-    gc()
-    
+    return(Y_hat)
+  
   }
   
+  Y_hats <- c(Y_hats_one, Y_hats_two)
   
   #######################################################
   ################# Effect Calculation ##################
@@ -621,7 +635,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   
   #Save estimates and real effects to matrix
   #Elements of list = DGPs
-  output <- mapply(function(b, t, ne, sl) data.frame(EN = t[,1],
+  out_it <- mapply(function(b, t, ne, sl) data.frame(EN = t[,1],
                                                      KRLS = t[,2],
                                                      RL = t[,3],
                                                      CF = t[,4],
@@ -632,7 +646,37 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                                                      true = b[sort(sample)]),
                    beta_ds, taus, tau_EM_NE, tau_EM_SL, SIMPLIFY = FALSE)
   
-  return(output)
+  return(out_it)
+  
+  
+  #Print operational information
+  now <- Sys.time()
+  diff <- as.numeric(now) - as.numeric(start_time)
+  
+  days <- floor(diff/(60*60*24))
+  hours <- floor(diff/(60*60)-days*24)
+  minutes <- floor(diff/60-hours*60-days*24*60)
+  seconds <- round(diff-minutes*60-hours*60*60-days*24*60*60)
+  
+  total_time_est <- diff/it*iterations
+  end_time_est <- as.numeric(start_time) + total_time_est
+  
+  elapsed <- paste('Time elapsed: ',
+                   ifelse(days>1, paste(days, ' days, ', sep = ''), ''),
+                   ifelse(days==1, paste(days, ' day, ', sep = ''), ''),
+                   ifelse(hours>1, paste(hours, ' hours, ', sep = ''), ''),
+                   ifelse(hours==1, paste(hours, ' hour, ', sep = ''), ''),
+                   ifelse(minutes>1, paste(minutes, ' minutes, ', sep = ''), ''),
+                   ifelse(minutes==1, paste(minutes, ' minute, ', sep = ''), ''),
+                   seconds, ' seconds.',
+                   sep = '')
+  complete <- paste('Estimated time of completion: ',
+                    as.POSIXct(end_time_est, origin = "1970-01-01"),
+                    sep = '')
+  
+  Log('Finished iteration %d of %d.', it, iterations)
+  Log('%d', elapsed)
+  Log('%d', complete)
   
 }
 
@@ -665,6 +709,7 @@ out_gdp8 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9
 colnames(out_gdp8) <- c('EN', 'KRLS', 'RL', 'CF',
                         'BGLM', 'BCF', 'NE', 'SL', 'True Value')
 
+
 for(i in 1:length(output)){
   
   start <- i * sample_size - sample_size + 1
@@ -672,7 +717,7 @@ for(i in 1:length(output)){
   
   iter_out <- output[[i]]
   out_gdp1[start:end,] <- iter_out[[1]]
-  out_gdp1[start:end,] <- iter_out[[2]]
+  out_gdp2[start:end,] <- iter_out[[2]]
   out_gdp3[start:end,] <- iter_out[[3]]
   out_gdp4[start:end,] <- iter_out[[4]]
   out_gdp5[start:end,] <- iter_out[[5]]
@@ -707,4 +752,3 @@ print(paste('Total time elapsed: ',
             ifelse(minutes==1, paste(minutes, ' minute, ', sep = ''), ''),
             seconds, ' seconds.',
             sep = ''))
-
