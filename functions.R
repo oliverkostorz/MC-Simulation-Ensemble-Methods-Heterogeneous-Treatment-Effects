@@ -77,3 +77,13 @@ custom_crossprod <- function(df){
   return(cross_df)
   
 }
+
+
+#Function to send text to socket
+Log <- function(text, ...) {
+  
+  msg <- sprintf(paste0(as.character(Sys.time()), ": ", text, "\n"), ...)
+  cat(msg)
+  write.socket(log.socket, msg)
+  
+}
