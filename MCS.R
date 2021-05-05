@@ -1,4 +1,4 @@
-#Next steps: 1. Include fake variables and add them to base variable description
+#Next steps:
 # 2. Delete not used packages
 # 3. Find out how much RAM the loop needs and assign resepctive numbers of cores
 
@@ -27,11 +27,11 @@ source('functions.R')
 #RUN IN TERMINAL BEFORE SIMULATION: nc -l 4000
 
 #Simulation size
-N <- 1000L
-sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 2L
+N <- 10000L
+sample_size <- 1000L #Only choose sample sizes which are multiples of f or amend code for sampling folds
+iterations <- 25L
 f <- 10L #Folds for Super Learning
-n_pseudo <- 10 #Number of pseudo variables
+n_pseudo <- 1000 #Number of pseudo variables
 
 sim_pars <- list(N, sample_size, iterations, f)
 
