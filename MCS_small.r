@@ -24,8 +24,8 @@ source('functions.R')
 
 #Simulation size
 N <- 10000L
-sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 10L
+sample_size <- 1000L #Only choose sample sizes which are multiples of f or amend code for sampling folds
+iterations <- 1000L
 f <- 10L #Folds for Super Learning
 n_pseudo <- 100 #Number of pseudo variables
 
