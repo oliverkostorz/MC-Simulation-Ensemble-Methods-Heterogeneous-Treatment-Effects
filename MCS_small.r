@@ -1,5 +1,6 @@
 # To do before starting simulation
-# Run "nc -l 4000" in terminal
+# Run "C:\nc64 -L -p 4000" in terminal
+#Ammend readme
 
 rm(list = ls(all.names = TRUE))
 set.seed(0815)
