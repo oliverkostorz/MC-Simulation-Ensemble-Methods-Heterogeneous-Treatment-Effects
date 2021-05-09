@@ -421,7 +421,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                     Y_hats, Ys, SIMPLIFY = FALSE))  
   
   scale <- 1
-  while(is.error(wei)){
+  while(is.error(wei) && scale < 100){
     
     wei <- try(mapply(function(x, y) lsqlincon(as.matrix(x/(10^scale)), y[sort(sample)]/(10^scale),
                                                Aeq = matrix(rep(1, ncol(x)), nrow = 1),
@@ -517,9 +517,6 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   X_dummy <- dummy_cols(X_dummy, select_columns = 'hetero_factor')
   X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
   
-  #Add dummies to base variable description
-  dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
-  
   ### Y_4_hat and Y_5_hat ###
   Y_hats_two <- foreach(dgps = c(4, 5), .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
@@ -538,7 +535,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     X_sample <- model.matrix(~as.matrix(X_dummy[sort(sample),])*treated[sort(sample)])
     
     colnames(X_sample) <- str_remove(str_remove(colnames(X_sample), 'as.matrix\\(X_dummy\\[sort\\(sample\\), \\]\\)'), '_1\\[sort\\(sample\\)\\]')
-    base_variables <- c(which(colnames(X_sample) %in% base_variables_name), dum_vars)
+    base_variables <- c(which(colnames(X_sample) %in% base_variables_name),
+                        which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE)))
     
     D_sample <- treated[sort(sample)]
     Y_sample <- Ys[[dgps]][sort(sample)]
