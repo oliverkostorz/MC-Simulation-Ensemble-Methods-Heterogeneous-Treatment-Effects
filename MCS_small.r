@@ -1,5 +1,6 @@
 # To do before starting simulation
-# Run "C:\nc64 -L -p 4000" in terminal
+# Run "C:\nc64 -L -p 4000" in terminal if used on windows
+# Run "nc -l 4000" in terminal if used on mac
 #Ammend readme
 
 rm(list = ls(all.names = TRUE))
@@ -26,7 +27,7 @@ source('functions.R')
 #Simulation size
 N <- 10000L
 sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 2L
+iterations <- 1000L
 f <- 10L #Folds for Super Learning
 n_pseudo <- 100 #Number of pseudo variables
 
@@ -342,8 +343,6 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   X_dummy <- dummy_cols(X_dummy, select_columns = 'hetero_factor')
   X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
   
-  #Add dummies to base variable description
-  
   Y_hats_two <- foreach(dgps = c(4, 5), .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
@@ -495,20 +494,13 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     CF_fit <- randomForest(y = Y_sample, x = X_sample[,base_variables])
     Y_hat[,'CausalForest'] <- predict(CF_fit, newdata = counterfactual_sample[,base_variables])
     
-    
     #### BGLM ####
     BGLM_fit <- bayesglm(Y_sample ~ X_sample[,base_variables])
     Y_hat[,'BGLM'] <- counterfactual_sample[,c(1, base_variables)] %*% BGLM_fit$coef
     
-    
-    #### BCF ####
-    BART_fit <- bart(x.train = X_sample[,base_variables], y.train = Y_sample,
-                     x.test = counterfactual_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-    Y_hat[,'BCF'] <- colMeans(BART_fit$yhat.test)
-    
     #### BCF ####
     BART_fit <- bartMachine(X = as.data.frame(X_sample[,base_variables]), y = Y_sample)
-    Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
+    Y_hat[,'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
     
     return(Y_hat)
     
@@ -584,7 +576,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     
     #### BCF ####
     BART_fit <- bartMachine(X = as.data.frame(X_sample[,base_variables]), y = Y_sample)
-    Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
+    Y_hat[,'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
     
     return(Y_hat)
   
@@ -646,8 +638,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                     sep = '')
   
   Log('Finished iteration %d of %d.', it, iterations)
-  Log('%d', elapsed)
-  Log('%d', complete)
+  Log('%s', elapsed)
+  Log('%s', complete)
   
   return(out_it)
   
@@ -712,4 +704,3 @@ print(paste('Total time elapsed: ',
             ifelse(minutes==1, paste(minutes, ' minute, ', sep = ''), ''),
             seconds, ' seconds.',
             sep = ''))
-
