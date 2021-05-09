@@ -1,6 +1,7 @@
-#Next steps:
-# 2. Delete not used packages
-# 3. Find out how much RAM the loop needs and assign resepctive numbers of cores
+# To do before starting simulation
+# Run "C:\nc64 -L -p 4000" in terminal if used on windows
+# Run "nc -l 4000" in terminal if used on mac
+# Ammend readme
 
 rm(list = ls(all.names = TRUE))
 set.seed(0815)
@@ -12,28 +13,28 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
                sets,glmnet,KRLS,mboost,devtools,stringr,randomForest,arm,
                BayesTree,bcf,fastDummies,pracma,quadprog,BBmisc,doParallel,
-               schoolmath)#,rJava,RWeka,SVMMatch,FindIt,GAMBoost)
+               schoolmath,benchmarkme,bartMachine)
 #install_github('xnie/rlearner')
 library(rlearner)
 
 #Import custom functions
 source('functions.R')
 
-
 #######################################################
 ############## Set simulation parameters ##############
 #######################################################
 
-#RUN IN TERMINAL BEFORE SIMULATION: nc -l 4000
-
 #Simulation size
 N <- 10000L
 sample_size <- 1000L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 25L
+iterations <- 1000L
 f <- 10L #Folds for Super Learning
-n_pseudo <- 1000 #Number of pseudo variables
+n_pseudo <- 100 #Number of pseudo variables
 
 sim_pars <- list(N, sample_size, iterations, f)
+
+# Set output file
+outfile <- 'C:\\Users\\okostorz\\Documents\\MCS\\Output'
 
 
 #######################################################
@@ -158,17 +159,17 @@ X_std <- data.frame(apply(X, MARGIN = 2, FUN = function(x) (x-mean(x))/sd(x)))
 ####################### Effects #######################
 #######################################################
 
-#DGPs 1 to 4 heterogeneous treatment effects
-beta_d_1 <- c(rep(1, times = N))
-beta_d_1[which(X[,1] == 0)] <- 0.5
-beta_d_2 <- beta_d_3 <- beta_d_4 <- beta_d_1
-
-#Propensity scores for linear DGPs (DGPs 1, 3, 5 and 7)
+#Propensity scores for linear DGPs (DGPs 1, 2 and 3)
 prop_score_linear <- 1/(1+exp(-rowSums(X_std[,1:21])))
 
-#DGPs 5 to 8 heterogeneous treatment effects
+#Heterogeneous treatment effects for low heterogeneous dimensionality (DGPs 1, 2 and 4)
+beta_d_1 <- c(rep(1, times = N))
+beta_d_1[which(X[,1] == 0)] <- 0.5
+beta_d_2 <- beta_d_4 <- beta_d_1
+
+#Heterogeneous treatment effects for high heterogeneous dimensionality (DGPs 3 and 5)
 beta_d_5 <- floor(X[,bXt]/sd(X[,bXt]))
-beta_d_6 <- beta_d_7 <- beta_d_8 <- beta_d_5
+beta_d_3 <- beta_d_5
 
 
 #DGP 1 coefficients
@@ -178,55 +179,34 @@ treated_1 <- as.numeric(rbernoulli(N, p = prop_score_linear))
 
 #DGP 2 coefficients
 beta_p_2 <- c(rep(0, times = p))
-beta_p_2 <- as.numeric(rbernoulli(p, p = 0.3))*rnorm(p, mean = 0, sd = (max(beta_d_2)-min(beta_d_2))/2)
-prop_score_2 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_2 != 0)])))
-treated_2 <- as.numeric(rbernoulli(N, p = prop_score_2))
+beta_p_2[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_2)-min(beta_d_2))*2)
+treated_2 <- as.numeric(rbernoulli(N, p = prop_score_linear))
 
 #DGP 3 coefficients
 beta_p_3 <- c(rep(0, times = p))
-beta_p_3[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_3)-min(beta_d_3))*2)
-treated_3 <- as.numeric(rbernoulli(N, p = prop_score_linear))
+beta_p_3 <- as.numeric(rbernoulli(p, p = 0.3))*rnorm(p, mean = 0, sd = (max(beta_d_3)-min(beta_d_3))/2)
+prop_score_3 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_3 != 0)])))
+treated_3 <- as.numeric(rbernoulli(N, p = prop_score_3))
 
 #DGP 4 coefficients
 beta_p_4 <- c(rep(0, times = p))
-beta_p_4 <- as.numeric(rbernoulli(p, p = 0.3))*rnorm(p, mean = 0, sd = (max(beta_d_4)-min(beta_d_4))*2)
-prop_score_4 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_4 != 0)])))
-treated_4 <- as.numeric(rbernoulli(N, p = prop_score_4))
+beta_p_4[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_4)-min(beta_d_4))/2)
+treated_4 <- as.numeric(rbernoulli(N, p = prop_score_linear))
 
 #DGP 5 coefficients
 beta_p_5 <- c(rep(0, times = p))
-beta_p_5[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_5)-min(beta_d_5))/2)
-treated_5 <- as.numeric(rbernoulli(N, p = prop_score_linear))
+beta_p_5 <- as.numeric(rbernoulli(p, p = 0.3))*rnorm(p, mean = 0, sd = (max(beta_d_5)-min(beta_d_5))*2)
+prop_score_5 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_5 != 0)])))
+treated_5 <- as.numeric(rbernoulli(N, p = prop_score_5))
 
-#DGP 6 coefficients
-beta_p_6 <- c(rep(0, times = p))
-beta_p_6 <- as.numeric(rbernoulli(p, p = 0.3))*rnorm(p, mean = 0, sd = (max(beta_d_6)-min(beta_d_6))/2)
-prop_score_6 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_6 != 0)])))
-treated_6 <- as.numeric(rbernoulli(N, p = prop_score_6))
 
-#DGP 7 coefficients
-beta_p_7 <- c(rep(0, times = p))
-beta_p_7[1:21] <- rnorm(21, mean = 0, sd = (max(beta_d_7)-min(beta_d_7))*2)
-treated_7 <- as.numeric(rbernoulli(N, p = prop_score_linear))
+treateds <- list(treated_1, treated_2, treated_3, treated_4, treated_5)
 
-#DGP 8 coefficients
-beta_p_8 <- c(rep(0, times = p))
-beta_p_8 <- as.numeric(rbernoulli(p, p = 0.3))*rnorm(p, mean = 0, sd = (max(beta_d_8)-min(beta_d_8))*2)
-prop_score_8 <- 1/(1+exp(-rowSums(X_std[,which(beta_p_8 != 0)])))
-treated_8 <- as.numeric(rbernoulli(N, p = prop_score_8))
+beta_ps <- list(beta_p_1, beta_p_2, beta_p_3, beta_p_4, beta_p_5)
 
-treateds <- list(treated_1, treated_2, treated_3, treated_4,
-                 treated_5, treated_6, treated_7, treated_8)
+beta_ds <- list(beta_d_1, beta_d_2, beta_d_3, beta_d_4, beta_d_5)
 
-beta_ps <- list(beta_p_1, beta_p_2, beta_p_3, beta_p_4, 
-                beta_p_5, beta_p_6, beta_p_7, beta_p_8)
-
-beta_ds <- list(beta_d_1, beta_d_2, beta_d_3, beta_d_4, 
-                beta_d_5, beta_d_6, beta_d_7, beta_d_8)
-
-prop_scores <- list(prop_score_linear,
-                    prop_score_2, prop_score_4,
-                    prop_score_6, prop_score_8)
+prop_scores <- list(prop_score_linear, prop_score_3, prop_score_5)
 
 
 #Calculate outcomes Y per DGP
@@ -235,12 +215,8 @@ Y_2 <- 0.5 + as.matrix(X)%*%beta_p_2 + treated_2 * beta_d_2 + rnorm(N, mean = 0,
 Y_3 <- 0.5 + as.matrix(X)%*%beta_p_3 + treated_3 * beta_d_3 + rnorm(N, mean = 0, sd = (max(beta_d_3)-min(beta_d_3))/10)
 Y_4 <- 0.5 + as.matrix(X)%*%beta_p_4 + treated_4 * beta_d_4 + rnorm(N, mean = 0, sd = (max(beta_d_4)-min(beta_d_4))/10)
 Y_5 <- 0.5 + as.matrix(X)%*%beta_p_5 + treated_5 * beta_d_5 + rnorm(N, mean = 0, sd = (max(beta_d_5)-min(beta_d_5))/10)
-Y_6 <- 0.5 + as.matrix(X)%*%beta_p_6 + treated_6 * beta_d_6 + rnorm(N, mean = 0, sd = (max(beta_d_6)-min(beta_d_6))/10)
-Y_7 <- 0.5 + as.matrix(X)%*%beta_p_7 + treated_7 * beta_d_7 + rnorm(N, mean = 0, sd = (max(beta_d_7)-min(beta_d_7))/10)
-Y_8 <- 0.5 + as.matrix(X)%*%beta_p_8 + treated_8 * beta_d_8 + rnorm(N, mean = 0, sd = (max(beta_d_8)-min(beta_d_8))/10)
 
-Ys <- list(Y_1, Y_2, Y_3, Y_4,
-           Y_5, Y_6, Y_7, Y_8)
+Ys <- list(Y_1, Y_2, Y_3, Y_4, Y_5)
 
 
 #Add pseudo variables to X
@@ -261,23 +237,24 @@ dir.create(file.path(getwd(), paste('/output/', start_time, sep = '')))
 
 #Save coefficients for descriptive evidence
 save(sim_pars, X, Ys, treateds, beta_ps, beta_ds, prop_scores,
-     file = paste(getwd(), '/output/', start_time, '/coefs.RData', sep = ''))
+     file = paste(outfile, '//coefs.RData', sep = ''))
 
 
 #Setup for parallel computing
 n.cores <- detectCores() - 1
-my.cluster <- makeCluster(n.cores, type = 'PSOCK', setup_strategy = 'sequential')
+my.cluster <- makeCluster(n.cores, type = 'PSOCK')
 print(my.cluster)
 
 ### Simulation iterations
 registerDoParallel(cl = my.cluster)
+
 
 output <- foreach(it = 1:iterations, .inorder = FALSE,
                   .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                 'devtools', 'stringr', 'randomForest',
                                 'arm', 'BayesTree', 'bcf', 'fastDummies',
                                 'pracma', 'quadprog', 'rlearner', 'BBmisc',
-                                'foreach')) %dopar% {
+                                'foreach', 'bartMachine')) %dopar% {
   
   #Randomly draw N pairs of outcomes and covariates plus treatment status
   sample <- sample(x = 1:N, size = sample_size)
@@ -288,13 +265,14 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   #Randomly split sample into f folds
   folds <- split(sample, rep(1:ceiling(length(sample)/f), each = length(sample)/f)[1:length(sample)])
   
-  #Out of sample predictions for Ys
-  ### Y_1_hat to Y_4_hat ###
-  Y_hats_one <- foreach(dgps = 1:4, .inorder = FALSE,
+  ### Low dimensional heterogeneities
+  ### Y_1_hat to Y_3_hat ###
+  Y_hats_one <- foreach(dgps = c(1:3), .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
 
     Log('Started Super Learning for DGP %d of iteration %d.', dgps, it)
                                       
@@ -347,10 +325,10 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
       
+      
       #### BCF ####
-      BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
-                       x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+      BART_fit <- bartMachine(X = as.data.frame(training_sample[,base_variables]), y = Y_training_sample)
+      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(test_sample[,base_variables]))
       
     }
     
@@ -359,7 +337,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   }
   
   
-  ### Y_5_hat to Y_8_hat ###
+  ### High dimensional heterogeneities
+  ### Y_4_hat and Y_5_hat ###
   #Add dummy variables for heterogeneous group association
   colnams <- c(colnames(X), 'hetero_factor')
   X_dummy <- cbind(X, floor(X[,'binomialXstudentst']))
@@ -367,14 +346,12 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   X_dummy <- dummy_cols(X_dummy, select_columns = 'hetero_factor')
   X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
   
-  #Add dummies to base variable description
-  dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
-  
-  Y_hats_two <- foreach(dgps = 5:8, .inorder = FALSE,
+  Y_hats_two <- foreach(dgps = c(4, 5), .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
                                         
     Log('Started Super Learning for DGP %d of iteration %d.', dgps, it)                 
 
@@ -390,7 +367,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       training_sample <- model.matrix(~as.matrix(X_dummy[training_units,])*treated[training_units])
       
       colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X_dummy\\[training_units, \\]\\)'), '_1\\[training_units\\]')
-      base_variables <- c(which(colnames(training_sample) %in% base_variables_name), dum_vars)
+      base_variables <- c(which(colnames(training_sample) %in% base_variables_name),
+                          which(str_detect(colnames(training_sample), 'hetero_factor', negate = FALSE)))
       
       D_training_sample <- treated[training_units]
       Y_training_sample <- Ys[[dgps]][training_units]
@@ -427,9 +405,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
       
       #### BCF ####
-      BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
-                       x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+      BART_fit <- bartMachine(X = as.data.frame(training_sample[,base_variables]), y = Y_training_sample)
+      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(test_sample[,base_variables]))
       
     }
     
@@ -447,7 +424,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                     Y_hats, Ys, SIMPLIFY = FALSE))  
   
   scale <- 1
-  while(is.error(wei)){
+  while(is.error(wei) && scale < 100){
     
     wei <- try(mapply(function(x, y) lsqlincon(as.matrix(x/(10^scale)), y[sort(sample)]/(10^scale),
                                                Aeq = matrix(rep(1, ncol(x)), nrow = 1),
@@ -464,13 +441,14 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   ############## Counterfactial Estimation ##############
   #######################################################
   
-  ### Y_1_hat to Y_4_hat ###
-  
-  Y_hats_one <- foreach(dgps = 1:4, .inorder = FALSE,
+  ### Low dimensional heterogeneities
+  ### Y_1_hat to Y_3_hat ###
+  Y_hats_one <- foreach(dgps = c(1:3), .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
                                         
     Log('Started Counterfactial Estimation for DGP %d of iteration %d.', dgps, it)
   
@@ -519,25 +497,19 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     CF_fit <- randomForest(y = Y_sample, x = X_sample[,base_variables])
     Y_hat[,'CausalForest'] <- predict(CF_fit, newdata = counterfactual_sample[,base_variables])
     
-    
     #### BGLM ####
     BGLM_fit <- bayesglm(Y_sample ~ X_sample[,base_variables])
     Y_hat[,'BGLM'] <- counterfactual_sample[,c(1, base_variables)] %*% BGLM_fit$coef
     
-    
     #### BCF ####
-    BART_fit <- bart(x.train = X_sample[,base_variables], y.train = Y_sample,
-                     x.test = counterfactual_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-    Y_hat[,'BCF'] <- colMeans(BART_fit$yhat.test)
-    
+    BART_fit <- bartMachine(X = as.data.frame(X_sample[,base_variables]), y = Y_sample)
+    Y_hat[,'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
     
     return(Y_hat)
     
   }
   
-  
-  ### Y_5_hat to Y_8_hat ###
-  
+  ### High dimensional heterogeneities
   #Add dummy variables for heterogeneous group association
   colnams <- c(colnames(X), 'hetero_factor')
   X_dummy <- cbind(X, floor(X[,'binomialXstudentst']))
@@ -545,16 +517,13 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   X_dummy <- dummy_cols(X_dummy, select_columns = 'hetero_factor')
   X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
   
-  #Add dummies to base variable description
-  dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
-  
-  ### Y_5_hat to Y_8_hat ###
-  
-  Y_hats_two <- foreach(dgps = 5:8, .inorder = FALSE,
+  ### Y_4_hat and Y_5_hat ###
+  Y_hats_two <- foreach(dgps = c(4, 5), .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
                                         
     Log('Started Counterfactial Estimation for DGP %d of iteration %d.', dgps, it)
                                         
@@ -567,7 +536,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     X_sample <- model.matrix(~as.matrix(X_dummy[sort(sample),])*treated[sort(sample)])
     
     colnames(X_sample) <- str_remove(str_remove(colnames(X_sample), 'as.matrix\\(X_dummy\\[sort\\(sample\\), \\]\\)'), '_1\\[sort\\(sample\\)\\]')
-    base_variables <- c(which(colnames(X_sample) %in% base_variables_name), dum_vars)
+    base_variables <- c(which(colnames(X_sample) %in% base_variables_name),
+                        which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE)))
     
     D_sample <- treated[sort(sample)]
     Y_sample <- Ys[[dgps]][sort(sample)]
@@ -608,9 +578,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     
     
     #### BCF ####
-    BART_fit <- bart(x.train = X_sample[,base_variables], y.train = Y_sample,
-                     x.test = counterfactual_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-    Y_hat[,'BCF'] <- colMeans(BART_fit$yhat.test)
+    BART_fit <- bartMachine(X = as.data.frame(X_sample[,base_variables]), y = Y_sample)
+    Y_hat[,'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
     
     return(Y_hat)
   
@@ -645,10 +614,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                                                      SL = sl,
                                                      true = b[sort(sample)]),
                    beta_ds, taus, tau_EM_NE, tau_EM_SL, SIMPLIFY = FALSE)
-  
-  return(out_it)
-  
-  
+
   #Print operational information
   now <- Sys.time()
   diff <- as.numeric(now) - as.numeric(start_time)
@@ -675,8 +641,10 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                     sep = '')
   
   Log('Finished iteration %d of %d.', it, iterations)
-  Log('%d', elapsed)
-  Log('%d', complete)
+  Log('%s', elapsed)
+  Log('%s', complete)
+  
+  return(out_it)
   
 }
 
@@ -699,15 +667,6 @@ colnames(out_gdp4) <- c('EN', 'KRLS', 'RL', 'CF',
 out_gdp5 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
 colnames(out_gdp5) <- c('EN', 'KRLS', 'RL', 'CF',
                         'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp6 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp6) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp7 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp7) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
-out_gdp8 <- data.frame(matrix(data = NA, nrow = iterations*sample_size, ncol = 9))
-colnames(out_gdp8) <- c('EN', 'KRLS', 'RL', 'CF',
-                        'BGLM', 'BCF', 'NE', 'SL', 'True Value')
 
 
 for(i in 1:length(output)){
@@ -721,16 +680,12 @@ for(i in 1:length(output)){
   out_gdp3[start:end,] <- iter_out[[3]]
   out_gdp4[start:end,] <- iter_out[[4]]
   out_gdp5[start:end,] <- iter_out[[5]]
-  out_gdp6[start:end,] <- iter_out[[6]]
-  out_gdp7[start:end,] <- iter_out[[7]]
-  out_gdp8[start:end,] <- iter_out[[8]]
   
 }
 
 #Write output to disk
-save(out_gdp1, out_gdp2, out_gdp3, out_gdp4,
-     out_gdp5, out_gdp6, out_gdp7, out_gdp8,
-     file = paste(getwd(), '/output/', start_time, '/output.RData', sep = ''))
+save(out_gdp1, out_gdp2, out_gdp3, out_gdp4, out_gdp5,
+     file = paste(outfile, '//output.RData', sep = ''))
 
 #Print final operational information
 now <- Sys.time()
