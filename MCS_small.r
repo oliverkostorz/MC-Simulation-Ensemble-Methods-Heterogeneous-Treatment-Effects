@@ -12,7 +12,7 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 pacman::p_load(purrr,extraDistr,poisbinom,actuar,circular,evd,rdetools,
                sets,glmnet,KRLS,mboost,devtools,stringr,randomForest,arm,
                BayesTree,bcf,fastDummies,pracma,quadprog,BBmisc,doParallel,
-               schoolmath,benchmarkme)
+               schoolmath,benchmarkme,bartMachine)
 #install_github('xnie/rlearner')
 library(rlearner)
 
@@ -26,7 +26,7 @@ source('functions.R')
 #Simulation size
 N <- 10000L
 sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 1000L
+iterations <- 2L
 f <- 10L #Folds for Super Learning
 n_pseudo <- 100 #Number of pseudo variables
 
@@ -250,7 +250,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                                 'devtools', 'stringr', 'randomForest',
                                 'arm', 'BayesTree', 'bcf', 'fastDummies',
                                 'pracma', 'quadprog', 'rlearner', 'BBmisc',
-                                'foreach')) %do% {
+                                'foreach', 'bartMachine')) %do% {
   
   #Randomly draw N pairs of outcomes and covariates plus treatment status
   sample <- sample(x = 1:N, size = sample_size)
@@ -267,7 +267,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
 
     Log('Started Super Learning for DGP %d of iteration %d.', dgps, it)
                                       
@@ -320,10 +321,10 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
       
+      
       #### BCF ####
-      BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
-                       x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+      BART_fit <- bartMachine(X = as.data.frame(training_sample[,base_variables]), y = Y_training_sample)
+      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(test_sample[,base_variables]))
       
     }
     
@@ -347,7 +348,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
                                         
     Log('Started Super Learning for DGP %d of iteration %d.', dgps, it)                 
 
@@ -401,9 +403,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
       
       #### BCF ####
-      BART_fit <- bart(x.train = training_sample[,base_variables], y.train = Y_training_sample,
-                       x.test = test_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- colMeans(BART_fit$yhat.test)
+      BART_fit <- bartMachine(X = as.data.frame(training_sample[,base_variables]), y = Y_training_sample)
+      Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(test_sample[,base_variables]))
       
     }
     
@@ -444,7 +445,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
                                         
     Log('Started Counterfactial Estimation for DGP %d of iteration %d.', dgps, it)
   
@@ -504,6 +506,9 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                      x.test = counterfactual_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
     Y_hat[,'BCF'] <- colMeans(BART_fit$yhat.test)
     
+    #### BCF ####
+    BART_fit <- bartMachine(X = as.data.frame(X_sample[,base_variables]), y = Y_sample)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
     
     return(Y_hat)
     
@@ -522,7 +527,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                       'devtools', 'stringr', 'randomForest',
                                       'arm', 'BayesTree', 'bcf', 'fastDummies',
-                                      'pracma', 'quadprog', 'rlearner', 'BBmisc')) %do% {
+                                      'pracma', 'quadprog', 'rlearner', 'BBmisc',
+                                      'bartMachine')) %do% {
                                         
     Log('Started Counterfactial Estimation for DGP %d of iteration %d.', dgps, it)
                                         
@@ -577,9 +583,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
     
     
     #### BCF ####
-    BART_fit <- bart(x.train = X_sample[,base_variables], y.train = Y_sample,
-                     x.test = counterfactual_sample[,base_variables], ndpost = 1000, nskip = 500, usequants = T)
-    Y_hat[,'BCF'] <- colMeans(BART_fit$yhat.test)
+    BART_fit <- bartMachine(X = as.data.frame(X_sample[,base_variables]), y = Y_sample)
+    Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(counterfactual_sample[,base_variables]))
     
     return(Y_hat)
   
