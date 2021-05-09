@@ -25,7 +25,7 @@ source('functions.R')
 
 #Simulation size
 N <- 10000L
-sample_size <- 1000L #Only choose sample sizes which are multiples of f or amend code for sampling folds
+sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
 iterations <- 1000L
 f <- 10L #Folds for Super Learning
 n_pseudo <- 100 #Number of pseudo variables
@@ -238,7 +238,7 @@ save(sim_pars, X, Ys, treateds, beta_ps, beta_ds, prop_scores,
 
 #Setup for parallel computing
 n.cores <- min(detectCores() - 1, floor(as.numeric(get_ram())/10^9))
-my.cluster <- makeCluster(n.cores, type = 'PSOCK')#, setup_strategy = 'sequential')
+my.cluster <- makeCluster(n.cores, type = 'PSOCK', setup_strategy = 'sequential')
 print(my.cluster)
 
 ### Simulation iterations
@@ -250,7 +250,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
                                 'devtools', 'stringr', 'randomForest',
                                 'arm', 'BayesTree', 'bcf', 'fastDummies',
                                 'pracma', 'quadprog', 'rlearner', 'BBmisc',
-                                'foreach')) %dopar% {
+                                'foreach')) %do% {
   
   #Randomly draw N pairs of outcomes and covariates plus treatment status
   sample <- sample(x = 1:N, size = sample_size)
@@ -342,7 +342,6 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
   X_dummy <- X_dummy[,-which(colnames(X_dummy) == 'hetero_factor')]
   
   #Add dummies to base variable description
-  dum_vars <- which(str_detect(colnames(X_dummy), 'hetero_factor', negate = FALSE))
   
   Y_hats_two <- foreach(dgps = c(4, 5), .inorder = FALSE,
                         .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
@@ -364,7 +363,8 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       training_sample <- model.matrix(~as.matrix(X_dummy[training_units,])*treated[training_units])
       
       colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X_dummy\\[training_units, \\]\\)'), '_1\\[training_units\\]')
-      base_variables <- c(which(colnames(training_sample) %in% base_variables_name), dum_vars)
+      base_variables <- c(which(colnames(training_sample) %in% base_variables_name),
+                          which(str_detect(colnames(training_sample), 'hetero_factor', negate = FALSE)))
       
       D_training_sample <- treated[training_units]
       Y_training_sample <- Ys[[dgps]][training_units]
