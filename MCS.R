@@ -1,10 +1,5 @@
-# To do before starting simulation
-# Run "C:\nc64 -L -p 4000" in terminal if used on windows
-# Run "nc -l 4000" in terminal if used on mac
-# Ammend readme
-
+#Monte Carlo Simulation
 rm(list = ls(all.names = TRUE))
-set.seed(0815)
 
 #Set working device
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -26,15 +21,12 @@ source('functions.R')
 
 #Simulation size
 N <- 10000L
-sample_size <- 1000L #Only choose sample sizes which are multiples of f or amend code for sampling folds
-iterations <- 1000L
+sample_size <- 100L #Only choose sample sizes which are multiples of f or amend code for sampling folds
+iterations <- 10L
 f <- 10L #Folds for Super Learning
-n_pseudo <- 100 #Number of pseudo variables
+n_pseudo <- 100L #Number of pseudo variables
 
 sim_pars <- list(N, sample_size, iterations, f)
-
-# Set output file
-outfile <- 'C:\\Users\\okostorz\\Documents\\MCS\\Output'
 
 
 #######################################################
@@ -159,17 +151,17 @@ X_std <- data.frame(apply(X, MARGIN = 2, FUN = function(x) (x-mean(x))/sd(x)))
 ####################### Effects #######################
 #######################################################
 
-#Propensity scores for linear DGPs (DGPs 1, 2 and 3)
+#Propensity scores for linear DGPs (DGPs 1, 2 and 4)
 prop_score_linear <- 1/(1+exp(-rowSums(X_std[,1:21])))
 
-#Heterogeneous treatment effects for low heterogeneous dimensionality (DGPs 1, 2 and 4)
+#Heterogeneous treatment effects for low heterogeneous dimensionality (DGPs 1, 2 and 3)
 beta_d_1 <- c(rep(1, times = N))
 beta_d_1[which(X[,1] == 0)] <- 0.5
-beta_d_2 <- beta_d_4 <- beta_d_1
+beta_d_2 <- beta_d_3 <- beta_d_1
 
-#Heterogeneous treatment effects for high heterogeneous dimensionality (DGPs 3 and 5)
+#Heterogeneous treatment effects for high heterogeneous dimensionality (DGPs 4 and 5)
 beta_d_5 <- floor(X[,bXt]/sd(X[,bXt]))
-beta_d_3 <- beta_d_5
+beta_d_4 <- beta_d_5
 
 
 #DGP 1 coefficients
@@ -222,6 +214,7 @@ Ys <- list(Y_1, Y_2, Y_3, Y_4, Y_5)
 #Add pseudo variables to X
 X <- cbind(X, pseudovars)
 
+
 #######################################################
 ###################### Simulation #####################
 #######################################################
@@ -237,19 +230,19 @@ dir.create(file.path(getwd(), paste('/output/', start_time, sep = '')))
 
 #Save coefficients for descriptive evidence
 save(sim_pars, X, Ys, treateds, beta_ps, beta_ds, prop_scores,
-     file = paste(outfile, '//coefs.RData', sep = ''))
+     file = paste(getwd(), '/output/', start_time, '/coefs.RData', sep = ''))
 
 
 #Setup for parallel computing
-n.cores <- detectCores() - 1
-my.cluster <- makeCluster(n.cores, type = 'PSOCK')
+n.cores <- min(detectCores() - 1, floor(as.numeric(get_ram())/10^9))
+my.cluster <- makeCluster(n.cores, type = 'PSOCK', setup_strategy = 'sequential')
 print(my.cluster)
 
 ### Simulation iterations
 registerDoParallel(cl = my.cluster)
 
 
-output <- foreach(it = 1:iterations, .inorder = FALSE,
+output <- foreach(it = 1:iterations, .inorder = FALSE, .errorhandling = 'remove',
                   .packages = c('sets', 'glmnet', 'KRLS', 'mboost',
                                 'devtools', 'stringr', 'randomForest',
                                 'arm', 'BayesTree', 'bcf', 'fastDummies',
@@ -310,7 +303,6 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       Y_hat[which(rownames(Y_hat) %in% test_units),'KRLS'] <- predict(KRLS_fit, newdata = test_sample[,base_variables][,non_constant])$fit
       
       #### R-Learner ####
-      remove(r_fit)
       r_fit <- rboost(as.matrix(training_sample[,base_variables]), D_training_sample, Y_training_sample)
       r_pred <- predict(r_fit, as.matrix(test_sample[,base_variables]), tau_only = FALSE)
       Y_hat[which(rownames(Y_hat) %in% test_units[which(D_test_sample==1)]),'RLearner'] <- r_pred$mu1[which(D_test_sample==1)]
@@ -319,14 +311,12 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       #### Random Forest ####
       CF_fit <- randomForest(y = Y_training_sample, x = training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'CausalForest'] <- predict(CF_fit, newdata = test_sample[,base_variables])
-      
+  
       #### BGLM ####
-      #Check if base variables are indeed the correct choice
       BGLM_fit <- bayesglm(Y_training_sample ~ training_sample[,base_variables])
       Y_hat[which(rownames(Y_hat) %in% test_units),'BGLM'] <- test_sample[,c(1, base_variables)] %*% BGLM_fit$coef
       
-      
-      #### BCF ####
+      #### BART ####
       BART_fit <- bartMachine(X = as.data.frame(training_sample[,base_variables]), y = Y_training_sample)
       Y_hat[which(rownames(Y_hat) %in% test_units),'BCF'] <- predict(BART_fit, as.data.frame(test_sample[,base_variables]))
       
@@ -365,6 +355,7 @@ output <- foreach(it = 1:iterations, .inorder = FALSE,
       
       training_units <- sort(unlist(folds[c(1:10)[-fl]]))
       training_sample <- model.matrix(~as.matrix(X_dummy[training_units,])*treated[training_units])
+      
       
       colnames(training_sample) <- str_remove(str_remove(colnames(training_sample), 'as.matrix\\(X_dummy\\[training_units, \\]\\)'), '_1\\[training_units\\]')
       base_variables <- c(which(colnames(training_sample) %in% base_variables_name),
@@ -685,7 +676,7 @@ for(i in 1:length(output)){
 
 #Write output to disk
 save(out_gdp1, out_gdp2, out_gdp3, out_gdp4, out_gdp5,
-     file = paste(outfile, '//output.RData', sep = ''))
+     file = paste(getwd(), '/output/', start_time, '/output.RData', sep = ''))
 
 #Print final operational information
 now <- Sys.time()
